@@ -128,7 +128,7 @@ struct ContentView: View {
                         .scaledToFit()
                         .padding(8)
                         .scaleEffect(previewZoom)
-                        .offset(previewOffset + previewDragOffset)
+                        .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
 
                     if let enhancedImage {
                         Image(uiImage: enhancedImage)
