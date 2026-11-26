@@ -21,8 +21,8 @@ struct ContentView: View {
     @State private var previewBaseZoom: CGFloat = 1
     @State private var previewOffset: CGSize = .zero
     @State private var previewDragOffset: CGSize = .zero
-    @State private var dividerDragActive = false
-    @State private var dividerDragStartPosition: CGFloat = 0.5
+    @State private var previewDragMode = 0 // 1: divider, 2: pan image, 3: compare
+    @State private var previewDragStartPosition: CGFloat = 0.5
 
     private let processor = ImageEnhancementEngine()
 
@@ -158,24 +158,7 @@ struct ContentView: View {
                                 .shadow(color: .black.opacity(0.14), radius: 4, y: 1)
                         }
                         .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
-                        .overlay {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(width: 56, height: proxy.size.height)
-                                .contentShape(Rectangle())
-                                .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
-                                .gesture(
-                                    DragGesture(minimumDistance: 0)
-                                        .onChanged { value in
-                                            if !dividerDragActive {
-                                                dividerDragStartPosition = comparisonPosition
-                                            }
-                                            dividerDragActive = true
-                                            comparisonPosition = min(max(dividerDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
-                                        }
-                                        .onEnded { _ in dividerDragActive = false }
-                                )
-                        }
+
                     }
 
                     VStack {
@@ -227,22 +210,36 @@ struct ContentView: View {
                         }
                 )
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 8)
+                    DragGesture(minimumDistance: 6)
                         .onChanged { value in
-                            if dividerDragActive {
-                                // The dedicated divider handle owns this drag.
-                            } else if previewZoom > 1.01 {
+                            if previewDragMode == 0 {
+                                let dividerX = proxy.size.width * comparisonPosition
+                                let touchNearDivider = abs(value.startLocation.x - dividerX) <= 38
+                                previewDragStartPosition = comparisonPosition
+                                if enhancedImage != nil && touchNearDivider {
+                                    previewDragMode = 1
+                                } else if previewZoom > 1.01 {
+                                    previewDragMode = 2
+                                } else if enhancedImage != nil {
+                                    previewDragMode = 3
+                                }
+                            }
+                            switch previewDragMode {
+                            case 1, 3:
+                                comparisonPosition = min(max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
+                            case 2:
                                 previewDragOffset = value.translation
-                            } else if enhancedImage != nil {
-                                comparisonPosition = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
+                            default:
+                                break
                             }
                         }
                         .onEnded { value in
-                            if !dividerDragActive && previewZoom > 1.01 {
+                            if previewDragMode == 2 {
                                 previewOffset.width += value.translation.width
                                 previewOffset.height += value.translation.height
-                                previewDragOffset = .zero
                             }
+                            previewDragOffset = .zero
+                            previewDragMode = 0
                         }
                 )
             }
