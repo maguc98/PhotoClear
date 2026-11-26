@@ -7,6 +7,10 @@ struct ContentView: View {
     @State private var originalImage: UIImage?
     @State private var enhancedImage: UIImage?
     @State private var isProcessing = false
+    @State private var processingProgress: Double = 0
+    @State private var processingStage = "准备处理照片…"
+    @State private var isAIProcessing = false
+    @State private var progressTask: Task<Void, Never>?
     @State private var comparisonPosition: CGFloat = 0.5
     @State private var strength: Double = 0.65
     @State private var selectedPreset: EnhancementPreset = .natural
@@ -36,14 +40,9 @@ struct ContentView: View {
                             .frame(maxHeight: .infinity)
                     }
 
-                    if isProcessing {
-                        HStack(spacing: 8) {
-                            ProgressView().tint(.blue)
-                            Text("正在本地处理照片…")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
+                    if isProcessing || processingProgress >= 1 {
+                        processingStatus
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                     privacyNote
                 }
@@ -281,6 +280,68 @@ struct ContentView: View {
         .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 20))
     }
 
+    private var processingStatus: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                if processingProgress >= 1 {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    ProgressView().controlSize(.small).tint(.blue)
+                }
+                Text(processingProgress >= 1 ? "处理完成" : processingStage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(processingProgress >= 1 ? .green : .primary)
+                Spacer()
+                Text("\(Int(processingProgress * 100))%")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: processingProgress)
+                .tint(processingProgress >= 1 ? .green : .blue)
+                .animation(.easeInOut(duration: 0.25), value: processingProgress)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func beginProgress(ai: Bool) {
+        progressTask?.cancel()
+        isAIProcessing = ai
+        processingProgress = 0.02
+        processingStage = ai ? "正在加载 AI 模型…" : "正在分析照片…"
+        progressTask = Task { @MainActor in
+            while !Task.isCancelled && processingProgress < 0.94 {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { break }
+                let step = ai ? 0.006 : 0.022
+                processingProgress = min(0.94, processingProgress + step)
+                if ai {
+                    processingStage = processingProgress < 0.18 ? "正在加载 AI 模型…" :
+                        processingProgress < 0.72 ? "AI 正在重建图像…" : "正在生成高清图片…"
+                } else {
+                    processingStage = processingProgress < 0.35 ? "正在分析照片…" :
+                        processingProgress < 0.78 ? "正在增强细节…" : "正在完成处理…"
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func completeProgress() {
+        progressTask?.cancel()
+        processingProgress = 1
+        processingStage = "处理完成"
+        Task {
+            try? await Task.sleep(for: .milliseconds(1400))
+            if !isProcessing {
+                processingProgress = 0
+                processingStage = "准备处理照片…"
+            }
+        }
+    }
+
     private var privacyNote: some View {
         HStack(spacing: 5) {
             Image(systemName: "lock.shield.fill").foregroundStyle(.green)
@@ -312,12 +373,14 @@ struct ContentView: View {
     private func runEnhancement() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
+        beginProgress(ai: false)
         Task {
             let result = await processor.enhance(originalImage, preset: selectedPreset, strength: strength)
             await MainActor.run {
                 enhancedImage = result
                 comparisonPosition = 0.5
                 isProcessing = false
+                completeProgress()
                 if result == nil {
                     message = "照片增强失败，请尝试更小尺寸的图片。"
                     showMessage = true
@@ -329,6 +392,7 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
+        beginProgress(ai: true)
         Task {
             do {
                 let result = try await RealESRGANUpscaler.shared.upscale(originalImage, outputScale: aiScale)
@@ -336,6 +400,7 @@ struct ContentView: View {
                     enhancedImage = result.image
                     comparisonPosition = 0.5
                     isProcessing = false
+                    completeProgress()
                     if result.inputWasDownscaled {
                         message = "为了保护设备内存，超大照片已自动缩小到安全尺寸后进行 AI 增强。输出尺寸为 \(Int(result.outputPixelSize.width)) × \(Int(result.outputPixelSize.height))。"
                         showMessage = true
@@ -344,6 +409,8 @@ struct ContentView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
+                    progressTask?.cancel()
+                    processingProgress = 0
                     message = error.localizedDescription
                     showMessage = true
                 }
