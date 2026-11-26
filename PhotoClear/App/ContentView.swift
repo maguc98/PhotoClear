@@ -23,34 +23,79 @@ struct ContentView: View {
     @State private var previewDragOffset: CGSize = .zero
     @State private var previewDragMode = 0 // 1: divider, 2: pan image, 3: compare
     @State private var previewDragStartPosition: CGFloat = 0.5
+    @State private var hasAppeared = false
 
     private let processor = ImageEnhancementEngine()
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.height < 750
+            let compact = geometry.size.height < 760
             ZStack {
-                Color(red: 0.955, green: 0.968, blue: 0.985).ignoresSafeArea()
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.945, green: 0.965, blue: 0.995),
+                        Color(red: 0.965, green: 0.958, blue: 0.990),
+                        Color(red: 0.945, green: 0.975, blue: 0.980)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-                VStack(spacing: compact ? 10 : 14) {
+                Circle()
+                    .fill(Color(red: 0.67, green: 0.82, blue: 1.0).opacity(0.32))
+                    .frame(width: 250, height: 250)
+                    .blur(radius: 65)
+                    .offset(x: 165, y: -300)
+                    .allowsHitTesting(false)
+
+                Circle()
+                    .fill(Color(red: 0.83, green: 0.76, blue: 1.0).opacity(0.22))
+                    .frame(width: 230, height: 230)
+                    .blur(radius: 70)
+                    .offset(x: -170, y: 320)
+                    .allowsHitTesting(false)
+
+                VStack(spacing: compact ? 8 : 12) {
                     header
+                        .opacity(hasAppeared ? 1 : 0)
+                        .offset(y: hasAppeared ? 0 : 10)
 
                     if let originalImage {
                         imageComparison(originalImage)
                             .frame(minHeight: 0, maxHeight: .infinity)
+                            .opacity(hasAppeared ? 1 : 0)
+                            .scaleEffect(hasAppeared ? 1 : 0.975)
+                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
                         compactControls(compact: compact)
+                            .opacity(hasAppeared ? 1 : 0)
+                            .offset(y: hasAppeared ? 0 : 14)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     } else {
                         importCard
                             .frame(maxHeight: .infinity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
 
                     privacyNote
+                        .opacity(hasAppeared ? 1 : 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, compact ? 6 : 12)
-                .padding(.bottom, 8)
+                .padding(.horizontal, compact ? 13 : 18)
+                .padding(.top, compact ? 5 : 12)
+                .padding(.bottom, compact ? 5 : 10)
             }
+            .onAppear {
+                withAnimation(.spring(response: 0.62, dampingFraction: 0.82).delay(0.06)) {
+                    hasAppeared = true
+                }
+            }
+            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: originalImage != nil)
+            .animation(.spring(response: 0.38, dampingFraction: 0.8), value: enhancedImage != nil)
+            .animation(.spring(response: 0.32, dampingFraction: 0.78), value: selectedPreset)
+            .animation(.spring(response: 0.32, dampingFraction: 0.8), value: aiScale)
+            .animation(.spring(response: 0.36, dampingFraction: 0.82), value: previewZoom)
+            .animation(.easeInOut(duration: 0.24), value: isProcessing)
         }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedItem) { _, item in Task { await loadPhoto(item) } }
@@ -62,65 +107,142 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("PHOTOCLEAR")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(.blue)
-                Text("照片清晰增强")
-                    .font(.system(size: 23, weight: .bold, design: .rounded))
-            }
-            Spacer()
-            if originalImage != nil {
-                PhotosPicker(selection: $selectedItem, matching: .images) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 42, height: 42)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.blue)
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text("PHOTOCLEAR STUDIO")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .tracking(2.1)
+                        .foregroundStyle(Color(red: 0.15, green: 0.52, blue: 0.91))
                 }
-                .disabled(isProcessing)
-            } else {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(.blue)
-                    .frame(width: 42, height: 42)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                Text("照片清晰增强")
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .tracking(-0.7)
+                    .foregroundStyle(Color(red: 0.10, green: 0.15, blue: 0.24))
+                Text("让每一处细节，都清晰一点")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(red: 0.48, green: 0.55, blue: 0.65))
             }
+
+            Spacer(minLength: 6)
+
+            PhotosPicker(selection: $selectedItem, matching: .images) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.white.opacity(0.92))
+                        .frame(width: 50, height: 50)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.95), lineWidth: 1)
+                        }
+                        .shadow(color: Color.blue.opacity(0.10), radius: 14, y: 6)
+
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(
+                            LinearGradient(colors: [Color.blue, Color(red: 0.31, green: 0.56, blue: 0.96)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .frame(width: 50, height: 50)
+
+                    Circle()
+                        .fill(Color(red: 0.27, green: 0.78, blue: 0.56))
+                        .frame(width: 8, height: 8)
+                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                        .offset(x: -7, y: 7)
+                }
+            }
+            .buttonStyle(PressScaleButtonStyle())
+            .disabled(isProcessing)
+            .accessibilityLabel("选择照片")
         }
+        .padding(.horizontal, 2)
+        .padding(.vertical, 3)
     }
 
     private var importCard: some View {
         PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-            VStack(spacing: 12) {
-                Image(systemName: "photo.badge.plus")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.blue)
-                Text("选择照片开始增强")
-                    .font(.title3.weight(.semibold))
-                Text("导入、处理、对比和保存，一屏完成")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text("从相册选择")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 13)
-                    .background(.blue, in: Capsule())
+            VStack(spacing: 15) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.08))
+                        .frame(width: 104, height: 104)
+                    Circle()
+                        .stroke(Color.blue.opacity(0.12), lineWidth: 1)
+                        .frame(width: 88, height: 88)
+                    Image(systemName: "photo.badge.plus")
+                        .font(.system(size: 38, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(
+                            LinearGradient(colors: [Color.blue, Color(red: 0.53, green: 0.56, blue: 0.96)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .symbolEffect(.bounce, value: hasAppeared)
+                }
+
+                VStack(spacing: 5) {
+                    Text("把照片变清晰")
+                        .font(.system(size: 21, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.28))
+                    Text("选择一张照片，开始本地增强与细节重建")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("从相册选择")
+                        .font(.system(size: 14, weight: .bold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+                .frame(height: 48)
+                .background(
+                    LinearGradient(colors: [Color(red: 0.16, green: 0.58, blue: 0.98),
+                                            Color(red: 0.28, green: 0.43, blue: 0.94)],
+                                   startPoint: .leading, endPoint: .trailing),
+                    in: Capsule()
+                )
+                .shadow(color: Color.blue.opacity(0.22), radius: 14, y: 7)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("照片仅在本机处理，不会上传")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(Color(red: 0.48, green: 0.57, blue: 0.67))
             }
             .frame(maxWidth: .infinity)
+            .padding(.horizontal, 22)
             .padding(.vertical, 28)
-            .background(.white, in: RoundedRectangle(cornerRadius: 26))
+            .background(.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.12)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            }
+            .shadow(color: Color(red: 0.23, green: 0.39, blue: 0.62).opacity(0.09), radius: 24, y: 12)
+            .padding(.vertical, 6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
+        .disabled(isProcessing)
     }
 
     private func imageComparison(_ image: UIImage) -> some View {
         VStack(spacing: 7) {
             GeometryReader { proxy in
                 ZStack {
-                    RoundedRectangle(cornerRadius: 22).fill(Color.white)
+                    RoundedRectangle(cornerRadius: 27, style: .continuous).fill(.white.opacity(0.94))
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -147,13 +269,15 @@ struct ContentView: View {
                             Rectangle()
                                 .fill(.white)
                                 .frame(width: 2)
+                                .overlay(LinearGradient(colors: [.white, Color(red: 0.34, green: 0.72, blue: 1)], startPoint: .top, endPoint: .bottom))
                             Circle()
-                                .fill(.white)
-                                .frame(width: 34, height: 34)
+                                .fill(.white.opacity(0.97))
+                                .frame(width: 40, height: 40)
+                                .overlay(Circle().stroke(Color.blue.opacity(0.14), lineWidth: 1))
                                 .overlay(Image(systemName: "arrow.left.and.right")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(.blue))
-                                .shadow(color: .black.opacity(0.14), radius: 4, y: 1)
+                                .shadow(color: Color.blue.opacity(0.18), radius: 10, y: 3)
                         }
                         .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
 
@@ -197,8 +321,10 @@ struct ContentView: View {
                             .transition(.opacity.combined(with: .scale))
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-                .contentShape(RoundedRectangle(cornerRadius: 22))
+                .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 27, style: .continuous).stroke(.white.opacity(0.95), lineWidth: 1.4))
+                .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.13), radius: 20, y: 10)
+                .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 .highPriorityGesture(
                     MagnificationGesture()
                         .onChanged { value in
@@ -253,118 +379,215 @@ struct ContentView: View {
 
     private func badge(_ title: String) -> some View {
         Text(title)
-            .font(.caption2.weight(.semibold))
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .tracking(0.2)
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
             .background(.black.opacity(0.48), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
     }
 
     private func compactControls(compact: Bool) -> some View {
-        VStack(spacing: compact ? 8 : 10) {
-            HStack(spacing: 7) {
+        VStack(spacing: compact ? 8 : 11) {
+            HStack(spacing: 5) {
                 ForEach(EnhancementPreset.allCases) { preset in
                     Button {
-                        selectedPreset = preset
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: preset.symbol)
-                            Text(preset.title)
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
+                            selectedPreset = preset
                         }
-                        .font(.caption.weight(.semibold))
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: preset.symbol)
+                                .font(.system(size: 13, weight: .semibold))
+                                .symbolEffect(.bounce, value: selectedPreset == preset)
+                            Text(preset.title)
+                                .font(.system(size: 12, weight: .bold))
+                        }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(selectedPreset == preset ? .blue : .primary)
-                        .background(selectedPreset == preset ? Color.blue.opacity(0.10) : Color.white, in: Capsule())
-                        .overlay(Capsule().stroke(selectedPreset == preset ? Color.blue.opacity(0.25) : Color.clear))
+                        .frame(height: compact ? 39 : 44)
+                        .foregroundStyle(selectedPreset == preset ? Color(red: 0.10, green: 0.48, blue: 0.88) : Color(red: 0.38, green: 0.44, blue: 0.54))
+                        .background {
+                            if selectedPreset == preset {
+                                Capsule()
+                                    .fill(LinearGradient(colors: [Color(red: 0.88, green: 0.95, blue: 1.0),
+                                                                  Color(red: 0.92, green: 0.94, blue: 1.0)],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .overlay(Capsule().stroke(Color.blue.opacity(0.18), lineWidth: 1))
+                                    .shadow(color: Color.blue.opacity(0.10), radius: 8, y: 3)
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressScaleButtonStyle())
                     .disabled(isProcessing)
                 }
             }
+            .padding(4)
+            .background(Color(red: 0.965, green: 0.973, blue: 0.988), in: Capsule())
 
-            HStack(spacing: 9) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("AI 超分")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Real-ESRGAN · 离线")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color(red: 0.93, green: 0.96, blue: 1.0))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "sparkles.rectangle.stack")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.blue)
                 }
-                Spacer(minLength: 2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI 超分辨率")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(red: 0.14, green: 0.19, blue: 0.28))
+                    Text("REAL-ESRGAN  ·  离线运行")
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(0.4)
+                        .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
+                }
+                Spacer(minLength: 3)
                 Picker("放大倍数", selection: $aiScale) {
                     Text("2×").tag(2)
                     Text("4×").tag(4)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 112)
+                .frame(width: compact ? 112 : 126)
+                .scaleEffect(compact ? 0.94 : 1)
                 .disabled(isProcessing)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.white, in: RoundedRectangle(cornerRadius: 15))
+            .padding(.horizontal, 10)
+            .padding(.vertical, compact ? 5 : 8)
+            .background(Color(red: 0.975, green: 0.982, blue: 0.995), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.white, lineWidth: 1))
 
             HStack(spacing: 8) {
                 Button(action: runEnhancement) {
-                    Label("普通增强", systemImage: "wand.and.stars")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(.blue)
-                        .background(Color.blue.opacity(0.09), in: Capsule())
+                    HStack(spacing: 7) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("普通增强")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: compact ? 47 : 52)
+                    .foregroundStyle(Color(red: 0.13, green: 0.48, blue: 0.83))
+                    .background(
+                        LinearGradient(colors: [Color(red: 0.89, green: 0.95, blue: 1.0),
+                                                Color(red: 0.92, green: 0.95, blue: 1.0)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: Capsule()
+                    )
+                    .overlay(Capsule().stroke(Color.blue.opacity(0.08), lineWidth: 1))
                 }
+                .buttonStyle(PressScaleButtonStyle())
                 .disabled(isProcessing)
 
                 Button(action: runAIUpscale) {
-                    Label(isProcessing ? "处理中" : "AI 放大", systemImage: "sparkles.rectangle.stack")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(.white)
-                        .background(.blue, in: Capsule())
+                    HStack(spacing: 7) {
+                        Image(systemName: "sparkles.rectangle.stack")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text(isProcessing ? "正在处理" : "AI 放大")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: compact ? 47 : 52)
+                    .foregroundStyle(.white)
+                    .background(
+                        LinearGradient(colors: [Color(red: 0.10, green: 0.59, blue: 0.99),
+                                                Color(red: 0.20, green: 0.43, blue: 0.94)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: Capsule()
+                    )
+                    .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 1))
+                    .shadow(color: Color.blue.opacity(0.22), radius: 12, y: 6)
                 }
+                .buttonStyle(PressScaleButtonStyle())
                 .disabled(isProcessing)
 
                 if enhancedImage != nil {
                     Button(action: saveEnhanced) {
                         Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .foregroundStyle(.blue)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Color(red: 0.12, green: 0.51, blue: 0.90))
+                            .frame(width: compact ? 46 : 50, height: compact ? 46 : 50)
                             .background(.white, in: Circle())
+                            .overlay(Circle().stroke(Color.blue.opacity(0.10), lineWidth: 1))
+                            .shadow(color: Color.blue.opacity(0.08), radius: 8, y: 3)
                     }
+                    .buttonStyle(PressScaleButtonStyle())
                     .accessibilityLabel("保存增强照片")
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
         }
-        .padding(10)
-        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 20))
+        .padding(compact ? 10 : 13)
+        .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 25, style: .continuous)
+                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.10)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
+        }
+        .shadow(color: Color(red: 0.25, green: 0.38, blue: 0.59).opacity(0.09), radius: 18, y: 9)
+        .animation(.spring(response: 0.34, dampingFraction: 0.78), value: enhancedImage != nil)
     }
 
     private var processingStatus: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                if processingProgress >= 1 {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else {
-                    ProgressView().controlSize(.small).tint(.blue)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle()
+                        .fill(processingProgress >= 1 ? Color.green.opacity(0.12) : Color.blue.opacity(0.11))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: processingProgress >= 1 ? "checkmark" : "sparkles")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
+                        .symbolEffect(.pulse, options: .repeating, isActive: processingProgress < 1)
                 }
-                Text(processingProgress >= 1 ? "处理完成" : processingStage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(processingProgress >= 1 ? .green : .primary)
-                Spacer()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(processingProgress >= 1 ? "处理完成" : processingStage)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(red: 0.13, green: 0.19, blue: 0.29))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(processingProgress >= 1 ? "高清照片已经准备好了" : "正在本地运行 · 请稍候")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
+                }
+
+                Spacer(minLength: 4)
+
                 Text("\(Int(processingProgress * 100))%")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
+                    .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
+                    .contentTransition(.numericText())
             }
-            ProgressView(value: processingProgress)
-                .tint(processingProgress >= 1 ? .green : .blue)
-                .animation(.easeInOut(duration: 0.25), value: processingProgress)
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(red: 0.89, green: 0.93, blue: 0.98))
+                    Capsule()
+                        .fill(LinearGradient(colors: processingProgress >= 1
+                                             ? [Color(red: 0.24, green: 0.76, blue: 0.48), Color(red: 0.36, green: 0.84, blue: 0.62)]
+                                             : [Color(red: 0.18, green: 0.64, blue: 1.0), Color(red: 0.34, green: 0.48, blue: 0.98)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(7, geometry.size.width * processingProgress))
+                        .shadow(color: (processingProgress >= 1 ? Color.green : Color.blue).opacity(0.24), radius: 5, y: 1)
+                }
+            }
+            .frame(height: 5)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(.white.opacity(0.85), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.13), radius: 20, y: 8)
+        .frame(maxWidth: 300)
+        .animation(.spring(response: 0.38, dampingFraction: 0.84), value: processingProgress >= 1)
+        .allowsHitTesting(false)
     }
 
     private func beginProgress(ai: Bool) {
@@ -404,15 +627,27 @@ struct ContentView: View {
     }
 
     private var privacyNote: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "lock.shield.fill").foregroundStyle(.green)
-            Text("完全本地处理 · 不上传照片")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 7) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color(red: 0.20, green: 0.71, blue: 0.48))
+            Text("完全本地处理")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color(red: 0.42, green: 0.50, blue: 0.61))
+            Circle()
+                .fill(Color(red: 0.70, green: 0.75, blue: 0.82))
+                .frame(width: 3, height: 3)
+            Text("不上传照片")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color(red: 0.52, green: 0.59, blue: 0.68))
         }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.60), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.85), lineWidth: 1))
     }
 
-    @MainActor
+        @MainActor
     private func loadPhoto(_ item: PhotosPickerItem?) async {
         guard let item else { return }
         do {
@@ -579,6 +814,15 @@ private struct ZoomComparisonView: View {
             .padding(.top, 12)
         }
         .statusBarHidden()
+    }
+}
+
+private struct PressScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.965 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.spring(response: 0.24, dampingFraction: 0.62), value: configuration.isPressed)
     }
 }
 
