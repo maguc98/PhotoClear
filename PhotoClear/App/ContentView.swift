@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var comparisonPosition: CGFloat = 0.5
     @State private var strength: Double = 0.65
     @State private var selectedPreset: EnhancementPreset = .natural
+    @State private var aiScale = 2
     @State private var showMessage = false
     @State private var message = ""
 
@@ -211,6 +212,51 @@ struct ContentView: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(.blue)
+                        .frame(width: 42, height: 42)
+                        .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("AI 超分辨率")
+                            .font(.headline)
+                        Text("Real-ESRGAN · Core ML · 完全离线")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+
+                Picker("输出尺寸", selection: $aiScale) {
+                    Text("2× 放大").tag(2)
+                    Text("4× 放大").tag(4)
+                }
+                .pickerStyle(.segmented)
+                .disabled(isProcessing)
+
+                Button(action: runAIUpscale) {
+                    HStack {
+                        Image(systemName: "sparkles.rectangle.stack")
+                        Text(isProcessing ? "AI 正在处理…" : "开始 AI 超分增强")
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .foregroundStyle(.white)
+                    .background(Color.blue, in: Capsule())
+                }
+                .disabled(isProcessing)
+
+                Text("模型随 App 安装，照片不会上传。大尺寸照片会自动按设备内存限制调整处理尺寸。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+            .background(Color.blue.opacity(0.045), in: RoundedRectangle(cornerRadius: 18))
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("增强强度")
@@ -299,6 +345,32 @@ struct ContentView: View {
                 isProcessing = false
                 if result == nil {
                     message = "照片增强失败，请尝试更小尺寸的图片。"
+                    showMessage = true
+                }
+            }
+        }
+    }
+
+    private func runAIUpscale() {
+        guard let originalImage, !isProcessing else { return }
+        isProcessing = true
+
+        Task {
+            do {
+                let result = try await RealESRGANUpscaler.shared.upscale(originalImage, outputScale: aiScale)
+                await MainActor.run {
+                    enhancedImage = result.image
+                    comparisonPosition = 0.5
+                    isProcessing = false
+                    if result.inputWasDownscaled {
+                        message = "为了保护设备内存，超大照片已自动缩小到安全尺寸后进行 AI 增强。输出尺寸为 \(Int(result.outputPixelSize.width)) × \(Int(result.outputPixelSize.height))。"
+                        showMessage = true
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    message = error.localizedDescription
                     showMessage = true
                 }
             }
