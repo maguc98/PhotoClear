@@ -1,9 +1,9 @@
 # Real-ESRGAN model attribution
 
-PhotoClear's optional on-device super-resolution engine bundles the `RealESRGAN_general_522_fp16` Core ML model.
+PhotoClear's optional on-device super-resolution engine bundles the `RealESRGAN_x4plus_fp16` Core ML model.
 
-- Core ML conversion project: https://github.com/hanxiao/real-esrgan-coreml
-- Model release: https://github.com/hanxiao/real-esrgan-coreml/releases/tag/v1.0.0
+- Core ML conversion project: https://huggingface.co/VincentGOURBIN/RealESRGAN-CoreML
+- Model release: https://huggingface.co/VincentGOURBIN/RealESRGAN-CoreML/tree/78493a5ce26d2674d5ff705d250446f4884cd533
 - Original model project: https://github.com/xinntao/Real-ESRGAN
 - The upstream Core ML project states that its source code is MIT licensed and the Real-ESRGAN weights are from the original project under BSD-3-Clause. See the upstream project and original project license before redistributing modified weights.
 
