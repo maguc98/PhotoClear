@@ -9,8 +9,8 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var processingProgress: Double = 0
     @State private var processingStage = "准备处理照片…"
-    @State private var isAIProcessing = false
-    @State private var progressTask: Task<Void, Never>?
+    @State private var detailEnhancementEnabled = true
+    @State private var noiseReductionEnabled = false
     @State private var comparisonPosition: CGFloat = 0.5
     @State private var aiScale = 2
     @State private var showMessage = false
@@ -93,6 +93,8 @@ struct ContentView: View {
             .animation(.spring(response: 0.36, dampingFraction: 0.82), value: previewZoom)
             .animation(.easeInOut(duration: 0.24), value: isProcessing)
                         .sensoryFeedback(.selection, trigger: aiScale)
+            .sensoryFeedback(.selection, trigger: detailEnhancementEnabled)
+            .sensoryFeedback(.selection, trigger: noiseReductionEnabled)
             .animation(.linear(duration: 0.18), value: processingProgress)
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -453,6 +455,11 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.95), lineWidth: 1))
 
             HStack(spacing: 8) {
+                aiProcessingOption(title: "细节增强", symbol: "sparkles", isEnabled: $detailEnhancementEnabled, compact: compact)
+                aiProcessingOption(title: "智能降噪", symbol: "waveform.and.magnifyingglass", isEnabled: $noiseReductionEnabled, compact: compact)
+            }
+
+            HStack(spacing: 8) {
                 Button(action: runAIUpscale) {
                     HStack(spacing: 8) {
                         Image(systemName: isProcessing ? "sparkles" : "sparkles.rectangle.stack")
@@ -490,6 +497,23 @@ struct ContentView: View {
                     .accessibilityLabel("保存增强照片")
                     .transition(.scale.combined(with: .opacity))
                 }
+
+                if let enhancedImage {
+                    ShareLink(
+                        item: Image(uiImage: enhancedImage),
+                        preview: SharePreview("PhotoClear AI 超分照片", image: Image(uiImage: enhancedImage))
+                    ) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color(red: 0.12, green: 0.51, blue: 0.90))
+                            .frame(width: compact ? 42 : 46, height: compact ? 42 : 46)
+                            .background(.white, in: Circle())
+                            .overlay(Circle().stroke(Color.blue.opacity(0.10), lineWidth: 1))
+                            .shadow(color: Color.blue.opacity(0.07), radius: 7, y: 2)
+                    }
+                    .accessibilityLabel("分享增强照片")
+                    .transition(.scale.combined(with: .opacity))
+                }
             }
         }
         .padding(compact ? 10 : 13)
@@ -501,6 +525,39 @@ struct ContentView: View {
         }
         .shadow(color: Color(red: 0.25, green: 0.38, blue: 0.59).opacity(0.07), radius: 15, y: 7)
         .animation(.spring(response: 0.34, dampingFraction: 0.78), value: enhancedImage != nil)
+    }
+
+    private func aiProcessingOption(title: String, symbol: String, isEnabled: Binding<Bool>, compact: Bool) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.76)) {
+                isEnabled.wrappedValue.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 10, weight: .bold))
+                Spacer(minLength: 2)
+                Image(systemName: isEnabled.wrappedValue ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isEnabled.wrappedValue
+                ? Color(red: 0.13, green: 0.49, blue: 0.86)
+                : Color(red: 0.48, green: 0.55, blue: 0.65))
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: compact ? 34 : 37)
+            .background(
+                isEnabled.wrappedValue
+                    ? Color(red: 0.91, green: 0.96, blue: 1.0)
+                    : Color.white.opacity(0.72),
+                in: Capsule()
+            )
+            .overlay(Capsule().stroke(Color.blue.opacity(isEnabled.wrappedValue ? 0.14 : 0.06), lineWidth: 1))
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .disabled(isProcessing)
     }
 
     private var processingStatus: some View {
@@ -570,31 +627,13 @@ struct ContentView: View {
         .allowsHitTesting(false)
     }
 
-    private func beginProgress(ai: Bool) {
-        progressTask?.cancel()
-        isAIProcessing = ai
+    private func beginProgress() {
         processingProgress = 0.02
-        processingStage = ai ? "正在加载 AI 模型…" : "正在分析照片…"
-        progressTask = Task { @MainActor in
-            while !Task.isCancelled && processingProgress < 0.94 {
-                try? await Task.sleep(for: .milliseconds(350))
-                guard !Task.isCancelled else { break }
-                let step = ai ? 0.006 : 0.022
-                processingProgress = min(0.94, processingProgress + step)
-                if ai {
-                    processingStage = processingProgress < 0.18 ? "正在加载 AI 模型…" :
-                        processingProgress < 0.72 ? "AI 正在重建图像…" : "正在生成高清图片…"
-                } else {
-                    processingStage = processingProgress < 0.35 ? "正在分析照片…" :
-                        processingProgress < 0.78 ? "正在增强细节…" : "正在完成处理…"
-                }
-            }
-        }
+        processingStage = "正在加载 AI 模型…"
     }
 
     @MainActor
     private func completeProgress() {
-        progressTask?.cancel()
         processingProgress = 1
         processingStage = "处理完成"
         Task {
@@ -653,10 +692,20 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
-        beginProgress(ai: true)
+        beginProgress()
         Task {
             do {
-                let result = try await RealESRGANUpscaler.shared.upscale(originalImage, outputScale: aiScale)
+                let result = try await RealESRGANUpscaler.shared.upscale(
+                    originalImage,
+                    outputScale: aiScale,
+                    detailEnhancement: detailEnhancementEnabled,
+                    noiseReduction: noiseReductionEnabled
+                ) { progress, stage in
+                    Task { @MainActor in
+                        processingProgress = min(max(progress, 0.02), 0.99)
+                        processingStage = stage
+                    }
+                }
                 await MainActor.run {
                     enhancedImage = result.image
                     comparisonPosition = 0.5
@@ -670,7 +719,6 @@ struct ContentView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
-                    progressTask?.cancel()
                     processingProgress = 0
                     message = error.localizedDescription
                     showMessage = true
