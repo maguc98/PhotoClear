@@ -537,12 +537,14 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         let sharpen = CIFilter.sharpenLuminance()
         sharpen.inputImage = processed
         let radiusFactor: Float = settings.mode == .landscape ? 1.0 : 0.9
-        sharpen.radius = 0.65 + settings.texture * 0.35 * radiusFactor
-        let modeSharpness: Float = settings.mode == .portrait ? 0.78 : (settings.mode == .night ? 0.82 : 1.0)
-        sharpen.sharpness = min(
-            max((settings.sharpening * 0.24 + settings.detailRecovery * 0.08 + settings.texture * 0.06) * modeSharpness, 0),
-            0.34
-        )
+        // Favor tighter, more visible detail reconstruction over broad soft sharpening.
+        sharpen.radius = 0.48 + settings.texture * 0.28 * radiusFactor
+        let modeSharpness: Float = settings.mode == .portrait ? 0.78 : (settings.mode == .night ? 0.76 : (settings.mode == .landscape ? 1.08 : 1.0))
+        let detailStrength: Float = settings.sharpening * 0.28
+        let recoveryStrength: Float = settings.detailRecovery * 0.12
+        let textureStrength: Float = settings.texture * 0.08
+        let combinedStrength: Float = (detailStrength + recoveryStrength + textureStrength) * modeSharpness
+        sharpen.sharpness = min(max(combinedStrength, 0), 0.42)
         processed = sharpen.outputImage ?? processed
 
         let color = CIFilter.colorControls()
@@ -559,7 +561,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         guard let naturalBase = sourceResize.outputImage else { return processed }
 
         if settings.naturalness > 0.01 {
-            let blendAmount: Float = min(max(settings.naturalness * 0.08, 0.0), 0.10)
+            let blendAmount: Float = min(max(settings.naturalness * 0.045, 0.0), 0.06)
             let dissolve = CIFilter.dissolveTransition()
             dissolve.inputImage = processed
             dissolve.targetImage = naturalBase
