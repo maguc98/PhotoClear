@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import CoreML
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import CoreGraphics
 
 struct RealESRGANResult {
@@ -58,13 +59,25 @@ final class RealESRGANUpscaler: @unchecked Sendable {
 
     private init() {}
 
-    func upscale(_ image: UIImage, outputScale: Int) async throws -> RealESRGANResult {
+    func upscale(
+        _ image: UIImage,
+        outputScale: Int,
+        detailEnhancement: Bool,
+        noiseReduction: Bool,
+        progress: @escaping @Sendable (Double, String) -> Void
+    ) async throws -> RealESRGANResult {
         guard outputScale == 2 || outputScale == 4 else {
             throw RealESRGANError.processingFailed("仅支持 2× 或 4× 输出。")
         }
 
         return try await Task.detached(priority: .userInitiated) {
-            try self.upscaleSynchronously(image, outputScale: outputScale)
+            try self.upscaleSynchronously(
+                image,
+                outputScale: outputScale,
+                detailEnhancement: detailEnhancement,
+                noiseReduction: noiseReduction,
+                progress: progress
+            )
         }.value
     }
 
@@ -96,8 +109,16 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         }
     }
 
-    private func upscaleSynchronously(_ image: UIImage, outputScale: Int) throws -> RealESRGANResult {
+    private func upscaleSynchronously(
+        _ image: UIImage,
+        outputScale: Int,
+        detailEnhancement: Bool,
+        noiseReduction: Bool,
+        progress: @Sendable (Double, String) -> Void
+    ) throws -> RealESRGANResult {
+        progress(0.03, "正在加载 AI 模型…")
         let model = try loadModel()
+        progress(0.08, "正在分析照片尺寸…")
 
         guard let inputName = model.modelDescription.inputDescriptionsByName.keys.sorted().first,
               let outputName = model.modelDescription.outputDescriptionsByName.keys.sorted().first,
@@ -197,6 +218,9 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             NSNumber(value: 1), NSNumber(value: 3),
             NSNumber(value: modelInputSize), NSNumber(value: modelInputSize)
         ]
+        let totalTiles = max(1, xStarts.count * yStarts.count)
+        var completedTiles = 0
+        progress(0.12, "正在准备 AI 图像分块…")
 
         for yIndex in yStarts.indices {
             let y0 = yStarts[yIndex]
@@ -280,8 +304,13 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                     cropRight: cropRight,
                     cropBottom: cropBottom
                 )
+                completedTiles += 1
+                let tileProgress = Double(completedTiles) / Double(totalTiles)
+                progress(0.12 + tileProgress * 0.78,
+                         "AI 正在重建细节 · \\(completedTiles)/\\(totalTiles)")
             }
         }
+        progress(0.93, "正在优化高清画面…")
 
         let outputData = Data(
             bytesNoCopy: outputBuffer,
@@ -307,8 +336,37 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             throw RealESRGANError.processingFailed("无法生成增强后的照片。")
         }
 
+        var finalCGImage = outputCGImage
+        var finalImage = CIImage(cgImage: outputCGImage)
+
+        if noiseReduction {
+            let denoise = CIFilter.noiseReduction()
+            denoise.inputImage = finalImage
+            denoise.noiseLevel = 0.008
+            denoise.sharpness = 0.35
+            if let filtered = denoise.outputImage {
+                finalImage = filtered
+            }
+        }
+
+        if detailEnhancement {
+            let sharpen = CIFilter.sharpenLuminance()
+            sharpen.inputImage = finalImage
+            sharpen.radius = 0.7
+            sharpen.sharpness = 0.16
+            if let filtered = sharpen.outputImage {
+                finalImage = filtered
+            }
+        }
+
+        if noiseReduction || detailEnhancement,
+           let processedCGImage = ciContext.createCGImage(finalImage, from: finalImage.extent) {
+            finalCGImage = processedCGImage
+        }
+
+        progress(0.98, "正在生成高清结果…")
         return RealESRGANResult(
-            image: UIImage(cgImage: outputCGImage, scale: 1, orientation: .up),
+            image: UIImage(cgImage: finalCGImage, scale: 1, orientation: .up),
             inputWasDownscaled: wasDownscaled,
             inputPixelSize: CGSize(width: width, height: height),
             outputPixelSize: CGSize(width: outputWidth, height: outputHeight)
