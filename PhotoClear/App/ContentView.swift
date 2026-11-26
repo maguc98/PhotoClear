@@ -12,8 +12,6 @@ struct ContentView: View {
     @State private var isAIProcessing = false
     @State private var progressTask: Task<Void, Never>?
     @State private var comparisonPosition: CGFloat = 0.5
-    @State private var strength: Double = 0.65
-    @State private var selectedPreset: EnhancementPreset = .natural
     @State private var aiScale = 2
     @State private var showMessage = false
     @State private var message = ""
@@ -25,7 +23,6 @@ struct ContentView: View {
     @State private var previewDragStartPosition: CGFloat = 0.5
     @State private var hasAppeared = false
 
-    private let processor = ImageEnhancementEngine()
 
     var body: some View {
         GeometryReader { geometry in
@@ -92,12 +89,10 @@ struct ContentView: View {
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: originalImage != nil)
             .animation(.spring(response: 0.38, dampingFraction: 0.8), value: enhancedImage != nil)
-            .animation(.spring(response: 0.32, dampingFraction: 0.78), value: selectedPreset)
-            .animation(.spring(response: 0.32, dampingFraction: 0.8), value: aiScale)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: aiScale)
             .animation(.spring(response: 0.36, dampingFraction: 0.82), value: previewZoom)
             .animation(.easeInOut(duration: 0.24), value: isProcessing)
-            .sensoryFeedback(.selection, trigger: selectedPreset)
-            .sensoryFeedback(.selection, trigger: aiScale)
+                        .sensoryFeedback(.selection, trigger: aiScale)
             .animation(.linear(duration: 0.18), value: processingProgress)
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -192,7 +187,7 @@ struct ContentView: View {
                     Text("把照片变清晰")
                         .font(.system(size: 21, weight: .bold, design: .rounded))
                         .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.28))
-                    Text("选择一张照片，开始本地增强与细节重建")
+                    Text("选择照片，使用 AI 重建细节并提升分辨率")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -403,62 +398,6 @@ struct ContentView: View {
 
     private func compactControls(compact: Bool) -> some View {
         VStack(spacing: compact ? 8 : 11) {
-            HStack(spacing: 5) {
-                ForEach(EnhancementPreset.allCases) { preset in
-                    Button {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
-                            selectedPreset = preset
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: preset.symbol)
-                                .font(.system(size: 13, weight: .semibold))
-                                .symbolEffect(.bounce, value: selectedPreset == preset)
-                            Text(preset.title)
-                                .font(.system(size: 12, weight: .bold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: compact ? 39 : 44)
-                        .foregroundStyle(selectedPreset == preset ? Color(red: 0.10, green: 0.48, blue: 0.88) : Color(red: 0.38, green: 0.44, blue: 0.54))
-                        .background {
-                            if selectedPreset == preset {
-                                Capsule()
-                                    .fill(LinearGradient(colors: [Color(red: 0.88, green: 0.95, blue: 1.0),
-                                                                  Color(red: 0.92, green: 0.94, blue: 1.0)],
-                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .overlay(Capsule().stroke(Color.blue.opacity(0.18), lineWidth: 1))
-                                    .shadow(color: Color.blue.opacity(0.10), radius: 8, y: 3)
-                            }
-                        }
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .disabled(isProcessing)
-                }
-            }
-            .padding(4)
-            .background(Color(red: 0.965, green: 0.973, blue: 0.988), in: Capsule())
-
-            HStack(spacing: 9) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.blue)
-                Text("增强强度")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.43, green: 0.51, blue: 0.62))
-                Slider(value: $strength, in: 0.15...1.0)
-                    .tint(Color(red: 0.22, green: 0.59, blue: 0.94))
-                    .disabled(isProcessing)
-                Text("\(Int(strength * 100))%")
-                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(Color(red: 0.18, green: 0.51, blue: 0.84))
-                    .frame(width: 30, alignment: .trailing)
-                    .contentTransition(.numericText())
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, compact ? 2 : 4)
-            .background(Color(red: 0.975, green: 0.985, blue: 0.998), in: Capsule())
-            .animation(.easeOut(duration: 0.16), value: strength)
-
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -473,20 +412,20 @@ struct ContentView: View {
                     Text("AI 超分辨率")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(red: 0.14, green: 0.19, blue: 0.28))
-                    Text("REAL-ESRGAN  ·  本地模型")
+                    Text("REAL-ESRGAN · 本地 AI 细节重建")
                         .font(.system(size: 9, weight: .medium))
-                        .tracking(0.35)
+                        .tracking(0.25)
                         .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
                 }
                 Spacer(minLength: 3)
                 HStack(spacing: 3) {
-                    ForEach([2, 4], id: \.self) { scale in
+                    ForEach([2, 4], id: \\.self) { scale in
                         Button {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
                                 aiScale = scale
                             }
                         } label: {
-                            Text("\(scale)×")
+                            Text("\\(scale)×")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(aiScale == scale ? Color(red: 0.12, green: 0.48, blue: 0.86) : Color(red: 0.48, green: 0.56, blue: 0.66))
                                 .frame(maxWidth: .infinity)
@@ -514,36 +453,16 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.95), lineWidth: 1))
 
             HStack(spacing: 8) {
-                Button(action: runEnhancement) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("普通增强")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: compact ? 47 : 52)
-                    .foregroundStyle(Color(red: 0.13, green: 0.48, blue: 0.83))
-                    .background(
-                        LinearGradient(colors: [Color(red: 0.89, green: 0.95, blue: 1.0),
-                                                Color(red: 0.92, green: 0.95, blue: 1.0)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: Capsule()
-                    )
-                    .overlay(Capsule().stroke(Color.blue.opacity(0.08), lineWidth: 1))
-                }
-                .buttonStyle(PressScaleButtonStyle())
-                .disabled(isProcessing)
-
                 Button(action: runAIUpscale) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "sparkles.rectangle.stack")
+                    HStack(spacing: 8) {
+                        Image(systemName: isProcessing ? "sparkles" : "sparkles.rectangle.stack")
                             .font(.system(size: 16, weight: .semibold))
-                        Text(isProcessing ? "正在处理" : "AI 放大")
+                            .symbolEffect(.pulse, options: .repeating, isActive: isProcessing)
+                        Text(isProcessing ? "AI 正在重建细节…" : "AI 超分增强")
                             .font(.system(size: 13, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: compact ? 47 : 52)
+                    .frame(height: compact ? 48 : 52)
                     .foregroundStyle(.white)
                     .background(
                         LinearGradient(colors: [Color(red: 0.10, green: 0.59, blue: 0.99),
@@ -728,25 +647,6 @@ struct ContentView: View {
         } catch {
             message = "导入照片失败：\(error.localizedDescription)"
             showMessage = true
-        }
-    }
-
-    private func runEnhancement() {
-        guard let originalImage, !isProcessing else { return }
-        isProcessing = true
-        beginProgress(ai: false)
-        Task {
-            let result = await processor.enhance(originalImage, preset: selectedPreset, strength: strength)
-            await MainActor.run {
-                enhancedImage = result
-                comparisonPosition = 0.5
-                isProcessing = false
-                completeProgress()
-                if result == nil {
-                    message = "照片增强失败，请尝试更小尺寸的图片。"
-                    showMessage = true
-                }
-            }
         }
     }
 
