@@ -142,7 +142,7 @@ struct ContentView: View {
                             }
                     }
 
-                    if enhancedImage != nil && previewZoom <= 1.01 {
+                    if enhancedImage != nil {
                         Rectangle()
                             .fill(.white)
                             .frame(width: 2)
