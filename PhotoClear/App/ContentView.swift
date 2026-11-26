@@ -33,9 +33,9 @@ struct ContentView: View {
             ZStack {
                 LinearGradient(
                     colors: [
-                        Color(red: 0.945, green: 0.965, blue: 0.995),
-                        Color(red: 0.965, green: 0.958, blue: 0.990),
-                        Color(red: 0.945, green: 0.975, blue: 0.980)
+                        Color(red: 0.952, green: 0.969, blue: 0.995),
+                        Color(red: 0.970, green: 0.965, blue: 0.992),
+                        Color(red: 0.952, green: 0.979, blue: 0.986)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -242,7 +242,7 @@ struct ContentView: View {
         VStack(spacing: 7) {
             GeometryReader { proxy in
                 ZStack {
-                    RoundedRectangle(cornerRadius: 27, style: .continuous).fill(.white.opacity(0.94))
+                    RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.97))
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -321,9 +321,9 @@ struct ContentView: View {
                             .transition(.opacity.combined(with: .scale))
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 27, style: .continuous).stroke(.white.opacity(0.95), lineWidth: 1.4))
-                .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.13), radius: 20, y: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.98), lineWidth: 1.2))
+                .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.09), radius: 16, y: 7)
                 .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 .highPriorityGesture(
                     MagnificationGesture()
@@ -388,14 +388,14 @@ struct ContentView: View {
 
     private func badge(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .tracking(0.2)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 11)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .tracking(0.15)
+            .foregroundStyle(.white.opacity(0.96))
+            .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(.black.opacity(0.48), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.8))
-            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+            .background(.black.opacity(0.42), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.24), lineWidth: 0.7))
+            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
     }
 
     private func compactControls(compact: Bool) -> some View {
@@ -437,9 +437,9 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color(red: 0.93, green: 0.96, blue: 1.0))
-                        .frame(width: 38, height: 38)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 0.91, green: 0.955, blue: 1.0))
+                        .frame(width: 36, height: 36)
                     Image(systemName: "sparkles.rectangle.stack")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Color.blue)
@@ -449,9 +449,9 @@ struct ContentView: View {
                     Text("AI 超分辨率")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(red: 0.14, green: 0.19, blue: 0.28))
-                    Text("REAL-ESRGAN  ·  离线运行")
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(0.4)
+                    Text("REAL-ESRGAN  ·  本地模型")
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.35)
                         .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
                 }
                 Spacer(minLength: 3)
@@ -464,10 +464,10 @@ struct ContentView: View {
                 .scaleEffect(compact ? 0.94 : 1)
                 .disabled(isProcessing)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, compact ? 5 : 8)
-            .background(Color(red: 0.975, green: 0.982, blue: 0.995), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.white, lineWidth: 1))
+            .padding(.horizontal, 11)
+            .padding(.vertical, compact ? 6 : 8)
+            .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.95), lineWidth: 1))
 
             HStack(spacing: 8) {
                 Button(action: runEnhancement) {
@@ -508,7 +508,7 @@ struct ContentView: View {
                         in: Capsule()
                     )
                     .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 1))
-                    .shadow(color: Color.blue.opacity(0.22), radius: 12, y: 6)
+                    .shadow(color: Color.blue.opacity(0.16), radius: 10, y: 4)
                 }
                 .buttonStyle(PressScaleButtonStyle())
                 .disabled(isProcessing)
@@ -530,13 +530,13 @@ struct ContentView: View {
             }
         }
         .padding(compact ? 10 : 13)
-        .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 27, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 25, style: .continuous)
-                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.10)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
+                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.08)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.0)
         }
-        .shadow(color: Color(red: 0.25, green: 0.38, blue: 0.59).opacity(0.09), radius: 18, y: 9)
+        .shadow(color: Color(red: 0.25, green: 0.38, blue: 0.59).opacity(0.07), radius: 15, y: 7)
         .animation(.spring(response: 0.34, dampingFraction: 0.78), value: enhancedImage != nil)
     }
 
