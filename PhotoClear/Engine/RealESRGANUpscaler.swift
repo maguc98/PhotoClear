@@ -436,12 +436,12 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             try? FileManager.default.removeItem(at: url)
             throw RealESRGANError.allocationFailed
         }
-        let pointer = mmap(nil, byteCount, PROT_READ | PROT_WRITE, MAP_SHARED, descriptor, 0)
-        guard pointer != MAP_FAILED else {
+        guard let mappedPointer = mmap(nil, byteCount, PROT_READ | PROT_WRITE, MAP_SHARED, descriptor, 0),
+              mappedPointer != MAP_FAILED else {
             try? FileManager.default.removeItem(at: url)
             throw RealESRGANError.allocationFailed
         }
-        return (pointer, url)
+        return (mappedPointer, url)
     }
 
     private func prepareInputImage(_ image: CIImage, settings: EnhancementSettings) -> CIImage {
