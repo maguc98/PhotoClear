@@ -28,7 +28,7 @@ struct ContentView: View {
 
                     if let originalImage {
                         imageComparison(originalImage)
-                            .frame(maxHeight: .infinity, minHeight: 0)
+                            .frame(minHeight: 0, maxHeight: .infinity)
 
                         compactControls(compact: compact)
                     } else {
