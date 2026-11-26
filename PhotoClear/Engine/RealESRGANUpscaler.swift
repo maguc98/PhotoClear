@@ -586,8 +586,11 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         // output scales receive slightly more protection because interpolation
         // cannot add trustworthy source detail at 8×/12×.
         if settings.naturalness > 0.01 {
-            let scaleProtection = outputScale >= 8 ? 1.18 : 1.0
-            let blendAmount = min(max(settings.naturalness * 0.12 * scaleProtection, 0), 0.18)
+            let scaleProtection: Double = outputScale >= 8 ? 1.18 : 1.0
+            let baseBlend: Double = settings.naturalness * 0.12
+            let protectedBlend: Double = baseBlend * scaleProtection
+            let boundedBlend: Double = max(protectedBlend, 0.0)
+            let blendAmount: Double = min(boundedBlend, 0.18)
             let dissolve = CIFilter.dissolveTransition()
             dissolve.inputImage = textureGuarded
             dissolve.targetImage = naturalBase
