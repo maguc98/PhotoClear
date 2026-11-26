@@ -346,7 +346,6 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         tileHeight: Int
     ) {
         let strides = input.strides.map(\.intValue)
-        let batchStride = strides[0]
         let channelStride = strides[1]
         let rowStride = strides[2]
         let columnStride = strides[3]
@@ -357,7 +356,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             for x in 0..<modelInputSize {
                 let sourceX = min(imageWidth - 1, tileX + reflectedCoordinate(x, length: tileWidth))
                 let sourceOffset = (sourceY * imageWidth + sourceX) * 4
-                let targetOffset = batchStride + y * rowStride + x * columnStride
+                let targetOffset = y * rowStride + x * columnStride
 
                 pointer[targetOffset] = Float(sourcePixels[sourceOffset]) / 255
                 pointer[targetOffset + channelStride] = Float(sourcePixels[sourceOffset + 1]) / 255
