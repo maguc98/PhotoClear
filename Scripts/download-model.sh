@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_NAME="RealESRGAN_general_522_fp16"
+MODEL_NAME="RealESRGAN_x4plus_fp16"
 ARCHIVE_NAME="${MODEL_NAME}.zip"
-MODEL_URL="https://github.com/hanxiao/real-esrgan-coreml/releases/download/v1.0.0/${ARCHIVE_NAME}"
-MODEL_SHA256="41368af9dcbcc300c0fe0442202acbf98d30dc07c28d49bf656883f7fef3656a"
+MODEL_URL="https://huggingface.co/VincentGOURBIN/RealESRGAN-CoreML/resolve/78493a5ce26d2674d5ff705d250446f4884cd533/RealESRGAN-x4plus.mlpackage.zip"
+MODEL_SHA256="61d44a58bb8549a0c0485c95d2b384c598b48a648231206b3e7c2ac221e64599"
 MODEL_DIR="PhotoClear/Models"
 TEMP_DIR="${RUNNER_TEMP:-/tmp}/photoclear-model"
 
