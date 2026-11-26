@@ -136,7 +136,7 @@ struct ContentView: View {
                             .scaledToFit()
                             .padding(8)
                             .scaleEffect(previewZoom)
-                            .offset(previewOffset + previewDragOffset)
+                            .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
                             .mask(alignment: .leading) {
                                 Rectangle().frame(width: max(0, proxy.size.width * comparisonPosition))
                             }
