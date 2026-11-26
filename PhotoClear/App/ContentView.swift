@@ -17,7 +17,10 @@ struct ContentView: View {
     @State private var aiScale = 2
     @State private var showMessage = false
     @State private var message = ""
-    @State private var showZoomViewer = false
+    @State private var previewZoom: CGFloat = 1
+    @State private var previewBaseZoom: CGFloat = 1
+    @State private var previewOffset: CGSize = .zero
+    @State private var previewDragOffset: CGSize = .zero
 
     private let processor = ImageEnhancementEngine()
 
@@ -53,11 +56,6 @@ struct ContentView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedItem) { _, item in Task { await loadPhoto(item) } }
-        .fullScreenCover(isPresented: $showZoomViewer) {
-            if let originalImage {
-                ZoomComparisonView(original: originalImage, enhanced: enhancedImage)
-            }
-        }
         .alert("PhotoClear", isPresented: $showMessage) {
             Button("好", role: .cancel) {}
         } message: {
@@ -129,18 +127,22 @@ struct ContentView: View {
                         .resizable()
                         .scaledToFit()
                         .padding(8)
+                        .scaleEffect(previewZoom)
+                        .offset(previewOffset + previewDragOffset)
 
                     if let enhancedImage {
                         Image(uiImage: enhancedImage)
                             .resizable()
                             .scaledToFit()
                             .padding(8)
+                            .scaleEffect(previewZoom)
+                            .offset(previewOffset + previewDragOffset)
                             .mask(alignment: .leading) {
                                 Rectangle().frame(width: max(0, proxy.size.width * comparisonPosition))
                             }
                     }
 
-                    if enhancedImage != nil {
+                    if enhancedImage != nil && previewZoom <= 1.01 {
                         Rectangle()
                             .fill(.white)
                             .frame(width: 2)
@@ -160,16 +162,23 @@ struct ContentView: View {
                         HStack {
                             badge(enhancedImage == nil ? "原图" : "增强")
                             Spacer()
-                            Button {
-                                showZoomViewer = true
-                            } label: {
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 36, height: 36)
-                                    .background(.black.opacity(0.45), in: Circle())
+                            if previewZoom > 1.01 {
+                                Button {
+                                    withAnimation(.spring(duration: 0.25)) {
+                                        previewZoom = 1
+                                        previewBaseZoom = 1
+                                        previewOffset = .zero
+                                        previewDragOffset = .zero
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 36, height: 36)
+                                        .background(.black.opacity(0.45), in: Circle())
+                                }
+                                .accessibilityLabel("恢复原比例")
                             }
-                            .accessibilityLabel("放大查看照片")
                         }
                         Spacer()
                         HStack {
@@ -182,10 +191,38 @@ struct ContentView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22))
                 .contentShape(RoundedRectangle(cornerRadius: 22))
-                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                    guard enhancedImage != nil else { return }
-                    comparisonPosition = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
-                })
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            previewZoom = min(max(previewBaseZoom * value, 1), 5)
+                        }
+                        .onEnded { _ in
+                            previewBaseZoom = previewZoom
+                            if previewZoom <= 1.01 {
+                                previewZoom = 1
+                                previewBaseZoom = 1
+                                previewOffset = .zero
+                                previewDragOffset = .zero
+                            }
+                        }
+                )
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if previewZoom > 1.01 {
+                                previewDragOffset = value.translation
+                            } else if enhancedImage != nil {
+                                comparisonPosition = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
+                            }
+                        }
+                        .onEnded { value in
+                            if previewZoom > 1.01 {
+                                previewOffset.width += value.translation.width
+                                previewOffset.height += value.translation.height
+                                previewDragOffset = .zero
+                            }
+                        }
+                )
             }
         }
     }
@@ -364,6 +401,10 @@ struct ContentView: View {
             originalImage = image
             enhancedImage = nil
             comparisonPosition = 0.5
+            previewZoom = 1
+            previewBaseZoom = 1
+            previewOffset = .zero
+            previewDragOffset = .zero
         } catch {
             message = "导入照片失败：\(error.localizedDescription)"
             showMessage = true
