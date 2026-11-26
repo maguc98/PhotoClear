@@ -9,10 +9,16 @@ struct ContentView: View {
     @State private var isProcessing = false
     @State private var processingProgress: Double = 0
     @State private var processingStage = "准备处理照片…"
-    @State private var detailEnhancementEnabled = true
-    @State private var noiseReductionEnabled = false
     @State private var comparisonPosition: CGFloat = 0.5
     @State private var aiScale = 2
+    @State private var enhancementMode: EnhancementMode = .natural
+    @AppStorage("photoclear.stackedUpscalingEnabled") private var stackedUpscalingEnabled = true
+    @AppStorage("photoclear.custom.detail") private var customDetail: Double = 0.52
+    @AppStorage("photoclear.custom.sharpen") private var customSharpen: Double = 0.18
+    @AppStorage("photoclear.custom.denoise") private var customDenoise: Double = 0.18
+    @AppStorage("photoclear.custom.texture") private var customTexture: Double = 0.30
+    @AppStorage("photoclear.custom.naturalness") private var customNaturalness: Double = 0.92
+    @AppStorage("photoclear.custom.color") private var customColor: Double = 0.96
     @State private var showMessage = false
     @State private var message = ""
     @State private var previewZoom: CGFloat = 1
@@ -93,8 +99,15 @@ struct ContentView: View {
             .animation(.spring(response: 0.36, dampingFraction: 0.82), value: previewZoom)
             .animation(.easeInOut(duration: 0.24), value: isProcessing)
                         .sensoryFeedback(.selection, trigger: aiScale)
-            .sensoryFeedback(.selection, trigger: detailEnhancementEnabled)
-            .sensoryFeedback(.selection, trigger: noiseReductionEnabled)
+            .sensoryFeedback(.selection, trigger: enhancementMode)
+            .sensoryFeedback(.selection, trigger: stackedUpscalingEnabled)
+            .onChange(of: stackedUpscalingEnabled) { _, enabled in
+                if !enabled && aiScale > 4 {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        aiScale = 4
+                    }
+                }
+            }
             .animation(.linear(duration: 0.18), value: processingProgress)
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -421,14 +434,14 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 3)
                 HStack(spacing: 3) {
-                    ForEach([2, 4], id: \.self) { scale in
+                    ForEach([2, 4, 8, 12], id: \.self) { scale in
                         Button {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
                                 aiScale = scale
                             }
                         } label: {
                             Text("\(scale)×")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .foregroundStyle(aiScale == scale ? Color(red: 0.12, green: 0.48, blue: 0.86) : Color(red: 0.48, green: 0.56, blue: 0.66))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: compact ? 34 : 36)
@@ -441,12 +454,13 @@ struct ContentView: View {
                                 }
                         }
                         .buttonStyle(PressScaleButtonStyle())
-                        .disabled(isProcessing)
+                        .disabled(isProcessing || (scale > 4 && !stackedUpscalingEnabled))
+                        .opacity(scale > 4 && !stackedUpscalingEnabled ? 0.38 : 1)
                     }
                 }
                 .padding(3)
                 .background(Color(red: 0.94, green: 0.96, blue: 0.985), in: Capsule())
-                .frame(width: compact ? 112 : 126)
+                .frame(width: compact ? 152 : 176)
                 .disabled(isProcessing)
             }
             .padding(.horizontal, 11)
@@ -454,9 +468,13 @@ struct ContentView: View {
             .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.95), lineWidth: 1))
 
-            HStack(spacing: 8) {
-                aiProcessingOption(title: "细节增强", symbol: "sparkles", isEnabled: $detailEnhancementEnabled, compact: compact)
-                aiProcessingOption(title: "智能降噪", symbol: "waveform.and.magnifyingglass", isEnabled: $noiseReductionEnabled, compact: compact)
+            modeSelector
+
+            stackedAlgorithmControl(compact: compact)
+
+            if enhancementMode == .custom {
+                customAdjustmentPanel(compact: compact)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             HStack(spacing: 8) {
@@ -525,6 +543,144 @@ struct ContentView: View {
         }
         .shadow(color: Color(red: 0.25, green: 0.38, blue: 0.59).opacity(0.07), radius: 15, y: 7)
         .animation(.spring(response: 0.34, dampingFraction: 0.78), value: enhancedImage != nil)
+    }
+
+    private var enhancementSettings: EnhancementSettings {
+        if enhancementMode != .custom {
+            return enhancementMode.defaultSettings
+        }
+        return EnhancementSettings(
+            mode: .custom,
+            detailRecovery: Float(customDetail),
+            sharpening: Float(customSharpen),
+            noiseReduction: Float(customDenoise),
+            texture: Float(customTexture),
+            naturalness: Float(customNaturalness),
+            colorPreservation: Float(customColor)
+        )
+    }
+
+    private var modeSelector: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(EnhancementMode.allCases) { mode in
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            enhancementMode = mode
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: mode.symbol)
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(mode.title)
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(enhancementMode == mode ? Color(red: 0.12, green: 0.48, blue: 0.86) : Color(red: 0.46, green: 0.54, blue: 0.64))
+                        .padding(.horizontal, 11)
+                        .frame(height: 32)
+                        .background(enhancementMode == mode ? Color(red: 0.89, green: 0.95, blue: 1.0) : .white.opacity(0.82), in: Capsule())
+                        .overlay(Capsule().stroke(Color.blue.opacity(enhancementMode == mode ? 0.16 : 0.06), lineWidth: 1))
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
+                    .disabled(isProcessing)
+                }
+            }
+            .padding(.horizontal, 1)
+        }
+    }
+
+    private func stackedAlgorithmControl(compact: Bool) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.blue)
+                .frame(width: 30, height: 30)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("多阶段堆叠放大")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(red: 0.16, green: 0.22, blue: 0.32))
+                Text(stackedUpscalingEnabled ? "启用分块处理与 8× / 12× 尺寸扩展" : "关闭后仅提供原生 2× / 4×")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color(red: 0.53, green: 0.60, blue: 0.69))
+            }
+            Spacer(minLength: 4)
+            Toggle("多阶段堆叠放大", isOn: $stackedUpscalingEnabled)
+                .labelsHidden()
+                .tint(.blue)
+                .scaleEffect(compact ? 0.84 : 0.9)
+                .disabled(isProcessing)
+                .accessibilityLabel("多阶段堆叠放大")
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, compact ? 5 : 7)
+        .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white, lineWidth: 1))
+    }
+
+    private func customAdjustmentPanel(compact: Bool) -> some View {
+        VStack(spacing: compact ? 7 : 9) {
+            HStack {
+                Text("自定义增强参数")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(red: 0.16, green: 0.22, blue: 0.32))
+                Spacer()
+                Text("自动保存在本机")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Button("恢复默认") {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        customDetail = 0.52
+                        customSharpen = 0.18
+                        customDenoise = 0.18
+                        customTexture = 0.30
+                        customNaturalness = 0.92
+                        customColor = 0.96
+                    }
+                }
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.blue)
+                .disabled(isProcessing)
+            }
+            HStack(spacing: 12) {
+                customParameterSlider("细节恢复", value: $customDetail)
+                customParameterSlider("锐化强度", value: $customSharpen)
+            }
+            HStack(spacing: 12) {
+                customParameterSlider("降噪强度", value: $customDenoise)
+                customParameterSlider("纹理增强", value: $customTexture)
+            }
+            HStack(spacing: 12) {
+                customParameterSlider("自然度保护", value: $customNaturalness)
+                customParameterSlider("色彩保留", value: $customColor)
+            }
+            Text("调整会作用于最终 AI 输出；数值越高，所对应的处理越明显。")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color(red: 0.54, green: 0.61, blue: 0.69))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(Color(red: 0.965, green: 0.978, blue: 0.995), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color.white, lineWidth: 1))
+    }
+
+    private func customParameterSlider(_ title: String, value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.38, green: 0.47, blue: 0.59))
+                Spacer(minLength: 2)
+                Text("\(Int(value.wrappedValue * 100))")
+                    .font(.system(size: 9, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color.blue)
+            }
+            Slider(value: value, in: 0...1)
+                .tint(Color(red: 0.25, green: 0.58, blue: 0.94))
+                .disabled(isProcessing)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func aiProcessingOption(title: String, symbol: String, isEnabled: Binding<Bool>, compact: Bool) -> some View {
@@ -698,8 +854,8 @@ struct ContentView: View {
                 let result = try await RealESRGANUpscaler.shared.upscale(
                     originalImage,
                     outputScale: aiScale,
-                    detailEnhancement: detailEnhancementEnabled,
-                    noiseReduction: noiseReductionEnabled
+                    settings: enhancementSettings,
+                    stackedUpscalingEnabled: stackedUpscalingEnabled
                 ) { progress, stage in
                     Task { @MainActor in
                         processingProgress = min(max(progress, 0.02), 0.99)

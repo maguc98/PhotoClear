@@ -4,6 +4,9 @@ import CoreML
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import CoreGraphics
+import Vision
+import CoreVideo
+import Darwin
 
 struct RealESRGANResult {
     let image: UIImage
@@ -62,20 +65,20 @@ final class RealESRGANUpscaler: @unchecked Sendable {
     func upscale(
         _ image: UIImage,
         outputScale: Int,
-        detailEnhancement: Bool,
-        noiseReduction: Bool,
+        settings: EnhancementSettings,
+        stackedUpscalingEnabled: Bool,
         progress: @escaping @Sendable (Double, String) -> Void
     ) async throws -> RealESRGANResult {
-        guard outputScale == 2 || outputScale == 4 else {
-            throw RealESRGANError.processingFailed("仅支持 2× 或 4× 输出。")
+        guard [2, 4, 8, 12].contains(outputScale),
+              outputScale <= 4 || stackedUpscalingEnabled else {
+            throw RealESRGANError.processingFailed("请开启多阶段堆叠放大后再选择 8× 或 12×。")
         }
 
         return try await Task.detached(priority: .userInitiated) {
             try self.upscaleSynchronously(
                 image,
                 outputScale: outputScale,
-                detailEnhancement: detailEnhancement,
-                noiseReduction: noiseReduction,
+                settings: settings,
                 progress: progress
             )
         }.value
@@ -112,8 +115,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
     private func upscaleSynchronously(
         _ image: UIImage,
         outputScale: Int,
-        detailEnhancement: Bool,
-        noiseReduction: Bool,
+        settings: EnhancementSettings,
         progress: @Sendable (Double, String) -> Void
     ) throws -> RealESRGANResult {
         progress(0.03, "正在加载 AI 模型…")
@@ -141,6 +143,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         let normalizedImage = orientedImage.transformed(
             by: CGAffineTransform(translationX: -originalExtent.origin.x, y: -originalExtent.origin.y)
         )
+        let preparedImage = prepareInputImage(normalizedImage, settings: settings)
 
         let sourceCGImage: CGImage
         let width: Int
@@ -150,12 +153,11 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             let factor = sqrt(Double(maxInputPixels) / Double(originalPixels))
             width = max(1, Int(Double(originalWidth) * factor))
             height = max(1, Int(Double(originalHeight) * factor))
-            let resized = normalizedImage.transformed(
+            let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+            guard let cgImage = ciContext.createCGImage(preparedImage.transformed(
                 by: CGAffineTransform(scaleX: CGFloat(width) / CGFloat(originalWidth),
                                       y: CGFloat(height) / CGFloat(originalHeight))
-            )
-            let bounds = CGRect(x: 0, y: 0, width: width, height: height)
-            guard let cgImage = ciContext.createCGImage(resized, from: bounds) else {
+            ), from: bounds) else {
                 throw RealESRGANError.invalidImage
             }
             sourceCGImage = cgImage
@@ -163,19 +165,23 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             width = originalWidth
             height = originalHeight
             let bounds = CGRect(x: 0, y: 0, width: width, height: height)
-            guard let cgImage = ciContext.createCGImage(normalizedImage, from: bounds) else {
+            guard let cgImage = ciContext.createCGImage(preparedImage, from: bounds) else {
                 throw RealESRGANError.invalidImage
             }
             sourceCGImage = cgImage
         }
 
-        let outputWidth = width * outputScale
-        let outputHeight = height * outputScale
+        let stageScale = outputScale == 2 ? 2 : 4
+        let outputWidth = width * stageScale
+        let outputHeight = height * stageScale
+        let finalOutputWidth = width * outputScale
+        let finalOutputHeight = height * outputScale
         let sourceByteCount = width * height * 4
         let outputByteCount = outputWidth * outputHeight * 4
+        let finalOutputPixels = finalOutputWidth * finalOutputHeight
 
         guard sourceByteCount > 0, outputByteCount > 0,
-              outputWidth * outputHeight <= maxOutputPixels else {
+              finalOutputPixels <= maxOutputPixels else {
             throw RealESRGANError.allocationFailed
         }
 
@@ -202,12 +208,13 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         sourceContext.draw(sourceCGImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         let sourcePixels = sourceBuffer.assumingMemoryBound(to: UInt8.self)
 
-        let outputBuffer = UnsafeMutableRawPointer.allocate(byteCount: outputByteCount, alignment: 64)
-        outputBuffer.initializeMemory(as: UInt8.self, repeating: 0, count: outputByteCount)
+        let intermediateMapping = try allocateMappedBuffer(byteCount: outputByteCount)
+        let outputBuffer = intermediateMapping.pointer
         var outputBufferOwned = true
         defer {
             if outputBufferOwned {
-                outputBuffer.deallocate()
+                _ = munmap(outputBuffer, outputByteCount)
+                try? FileManager.default.removeItem(at: intermediateMapping.url)
             }
         }
         let outputPixels = outputBuffer.assumingMemoryBound(to: UInt8.self)
@@ -294,7 +301,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                     destination: outputPixels,
                     destinationWidth: outputWidth,
                     destinationHeight: outputHeight,
-                    destinationScale: outputScale,
+                    destinationScale: stageScale,
                     tileX: x0,
                     tileY: y0,
                     tileWidth: tileWidth,
@@ -310,17 +317,20 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                          "AI 正在重建细节 · \(completedTiles)/\(totalTiles)")
             }
         }
-        progress(0.93, "正在优化高清画面…")
+        progress(0.93, outputScale > 4 ? "正在进行多阶段尺寸扩展…" : "正在优化高清画面…")
 
-        let outputData = Data(
+        let intermediateData = Data(
             bytesNoCopy: outputBuffer,
             count: outputByteCount,
-            deallocator: .custom { pointer, _ in pointer.deallocate() }
+            deallocator: .custom { pointer, _ in
+                _ = munmap(pointer, outputByteCount)
+                try? FileManager.default.removeItem(at: intermediateMapping.url)
+            }
         )
         outputBufferOwned = false
 
-        guard let provider = CGDataProvider(data: outputData as CFData),
-              let outputCGImage = CGImage(
+        guard let intermediateProvider = CGDataProvider(data: intermediateData as CFData),
+              let intermediateCGImage = CGImage(
                 width: outputWidth,
                 height: outputHeight,
                 bitsPerComponent: 8,
@@ -328,40 +338,79 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                 bytesPerRow: outputWidth * 4,
                 space: rgbSpace,
                 bitmapInfo: rgbaBitmapInfo,
-                provider: provider,
+                provider: intermediateProvider,
                 decode: nil,
                 shouldInterpolate: true,
                 intent: .defaultIntent
               ) else {
-            throw RealESRGANError.processingFailed("无法生成增强后的照片。")
+            throw RealESRGANError.processingFailed("无法生成分块超分中间图像。")
         }
 
-        var finalCGImage = outputCGImage
-        var finalImage = CIImage(cgImage: outputCGImage)
+        var finalImage = CIImage(cgImage: intermediateCGImage)
+        if outputScale != stageScale {
+            let scaleFilter = CIFilter.lanczosScaleTransform()
+            scaleFilter.inputImage = finalImage
+            scaleFilter.scale = Float(outputScale) / Float(stageScale)
+            scaleFilter.aspectRatio = 1
+            guard let scaledImage = scaleFilter.outputImage else {
+                throw RealESRGANError.processingFailed("多阶段尺寸扩展失败。")
+            }
+            finalImage = scaledImage
+        }
 
-        if noiseReduction {
-            let denoise = CIFilter.noiseReduction()
-            denoise.inputImage = finalImage
-            denoise.noiseLevel = 0.008
-            denoise.sharpness = 0.35
-            if let filtered = denoise.outputImage {
-                finalImage = filtered
+        finalImage = applyPostProcessing(
+            finalImage,
+            sourceImage: CIImage(cgImage: sourceCGImage),
+            outputScale: outputScale,
+            settings: settings
+        )
+
+        let finalBounds = CGRect(x: 0, y: 0, width: finalOutputWidth, height: finalOutputHeight)
+        finalImage = finalImage.cropped(to: finalBounds)
+        let finalByteCount = finalOutputWidth * finalOutputHeight * 4
+        let finalMapping = try allocateMappedBuffer(byteCount: finalByteCount)
+        var finalBufferOwned = true
+        defer {
+            if finalBufferOwned {
+                _ = munmap(finalMapping.pointer, finalByteCount)
+                try? FileManager.default.removeItem(at: finalMapping.url)
             }
         }
 
-        if detailEnhancement {
-            let sharpen = CIFilter.sharpenLuminance()
-            sharpen.inputImage = finalImage
-            sharpen.radius = 0.7
-            sharpen.sharpness = 0.16
-            if let filtered = sharpen.outputImage {
-                finalImage = filtered
-            }
-        }
+        ciContext.render(
+            finalImage,
+            toBitmap: finalMapping.pointer,
+            rowBytes: finalOutputWidth * 4,
+            bounds: finalBounds,
+            format: .RGBA8,
+            colorSpace: rgbSpace
+        )
 
-        if noiseReduction || detailEnhancement,
-           let processedCGImage = ciContext.createCGImage(finalImage, from: finalImage.extent) {
-            finalCGImage = processedCGImage
+        let finalData = Data(
+            bytesNoCopy: finalMapping.pointer,
+            count: finalByteCount,
+            deallocator: .custom { pointer, _ in
+                _ = munmap(pointer, finalByteCount)
+                try? FileManager.default.removeItem(at: finalMapping.url)
+            }
+        )
+        finalBufferOwned = false
+
+        guard let finalProvider = CGDataProvider(data: finalData as CFData),
+              let finalCGImage = CGImage(
+                width: finalOutputWidth,
+                height: finalOutputHeight,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: finalOutputWidth * 4,
+                space: rgbSpace,
+                bitmapInfo: rgbaBitmapInfo,
+                provider: finalProvider,
+                decode: nil,
+                shouldInterpolate: true,
+                intent: .defaultIntent
+              ) else {
+            throw RealESRGANError.processingFailed("无法生成最终高清照片。")
         }
 
         progress(0.98, "正在生成高清结果…")
@@ -369,8 +418,150 @@ final class RealESRGANUpscaler: @unchecked Sendable {
             image: UIImage(cgImage: finalCGImage, scale: 1, orientation: .up),
             inputWasDownscaled: wasDownscaled,
             inputPixelSize: CGSize(width: width, height: height),
-            outputPixelSize: CGSize(width: outputWidth, height: outputHeight)
+            outputPixelSize: CGSize(width: finalOutputWidth, height: finalOutputHeight)
         )
+    }
+
+
+    private func allocateMappedBuffer(byteCount: Int) throws -> (pointer: UnsafeMutableRawPointer, url: URL) {
+        guard byteCount > 0 else { throw RealESRGANError.allocationFailed }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PhotoClear-\(UUID().uuidString).rgba")
+        let descriptor = Darwin.open(url.path, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else {
+            throw RealESRGANError.allocationFailed
+        }
+        defer { close(descriptor) }
+        guard ftruncate(descriptor, off_t(byteCount)) == 0 else {
+            try? FileManager.default.removeItem(at: url)
+            throw RealESRGANError.allocationFailed
+        }
+        let pointer = mmap(nil, byteCount, PROT_READ | PROT_WRITE, MAP_SHARED, descriptor, 0)
+        guard pointer != MAP_FAILED else {
+            try? FileManager.default.removeItem(at: url)
+            throw RealESRGANError.allocationFailed
+        }
+        return (pointer, url)
+    }
+
+    private func prepareInputImage(_ image: CIImage, settings: EnhancementSettings) -> CIImage {
+        var prepared = image
+
+        if settings.mode == .night {
+            let denoise = CIFilter.noiseReduction()
+            denoise.inputImage = prepared
+            denoise.noiseLevel = min(max(settings.noiseReduction * 0.035, 0.008), 0.04)
+            denoise.sharpness = 0.22
+            prepared = denoise.outputImage ?? prepared
+            prepared = prepared.applyingFilter(
+                "CIHighlightShadowAdjust",
+                parameters: ["inputShadowAmount": 0.12, "inputHighlightAmount": 0.96]
+            )
+        } else if settings.mode == .portrait {
+            prepared = personAwareInput(prepared, amount: settings.detailRecovery)
+        } else if settings.mode == .landscape {
+            prepared = prepared.applyingFilter(
+                "CIColorControls",
+                parameters: [kCIInputContrastKey: 1.015, kCIInputSaturationKey: 1.0]
+            )
+        } else if settings.mode == .custom && settings.noiseReduction > 0.55 {
+            let denoise = CIFilter.noiseReduction()
+            denoise.inputImage = prepared
+            denoise.noiseLevel = min(max(settings.noiseReduction * 0.025, 0.01), 0.035)
+            denoise.sharpness = 0.25
+            prepared = denoise.outputImage ?? prepared
+        }
+
+        return prepared
+    }
+
+    private func personAwareInput(_ image: CIImage, amount: Float) -> CIImage {
+        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else {
+            return image
+        }
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .balanced
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        do {
+            try VNImageRequestHandler(cgImage: cgImage).perform([request])
+        } catch {
+            return image
+        }
+        guard let pixelBuffer = request.results?.first?.pixelBuffer else {
+            return image
+        }
+
+        let rawMask = CIImage(cvPixelBuffer: pixelBuffer)
+        let sx = image.extent.width / max(rawMask.extent.width, 1)
+        let sy = image.extent.height / max(rawMask.extent.height, 1)
+        let mask = rawMask
+            .transformed(by: CGAffineTransform(scaleX: sx, y: sy))
+            .transformed(by: CGAffineTransform(translationX: image.extent.minX, y: image.extent.minY))
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 1.2])
+            .cropped(to: image.extent)
+
+        let amount = min(max(Double(amount) * 0.20, 0.04), 0.20)
+        let personDetails = image.applyingFilter(
+            "CISharpenLuminance",
+            parameters: [kCIInputSharpnessKey: amount]
+        )
+        return personDetails.applyingFilter(
+            "CIBlendWithMask",
+            parameters: [
+                kCIInputBackgroundImageKey: image,
+                kCIInputMaskImageKey: mask
+            ]
+        )
+    }
+
+    private func applyPostProcessing(
+        _ image: CIImage,
+        sourceImage: CIImage,
+        outputScale: Int,
+        settings: EnhancementSettings
+    ) -> CIImage {
+        var processed = image
+
+        if settings.noiseReduction > 0.01 {
+            let denoise = CIFilter.noiseReduction()
+            denoise.inputImage = processed
+            denoise.noiseLevel = min(max(settings.noiseReduction * 0.022, 0.0), 0.035)
+            denoise.sharpness = 0.30
+            processed = denoise.outputImage ?? processed
+        }
+
+        let sharpen = CIFilter.sharpenLuminance()
+        sharpen.inputImage = processed
+        sharpen.radius = 0.65 + settings.texture * 0.35
+        sharpen.sharpness = min(
+            max(settings.sharpening * 0.24 + settings.detailRecovery * 0.08 + settings.texture * 0.06, 0),
+            0.34
+        )
+        processed = sharpen.outputImage ?? processed
+
+        let color = CIFilter.colorControls()
+        color.inputImage = processed
+        color.saturation = 1.0 - (1.0 - settings.colorPreservation) * 0.08
+        processed = color.outputImage ?? processed
+
+        // Mix a small amount of a high-quality resize of the prepared original
+        // back into the result. This tempers invented micro-texture while keeping
+        // the model's larger-scale reconstruction and sharp edges.
+        if settings.naturalness > 0.01 {
+            let sourceResize = CIFilter.lanczosScaleTransform()
+            sourceResize.inputImage = sourceImage
+            sourceResize.scale = Float(outputScale)
+            sourceResize.aspectRatio = 1
+            if let naturalBase = sourceResize.outputImage {
+                let dissolve = CIFilter.dissolveTransition()
+                dissolve.inputImage = processed
+                dissolve.targetImage = naturalBase
+                dissolve.time = min(max(settings.naturalness * 0.15, 0), 0.15)
+                processed = dissolve.outputImage ?? processed
+            }
+        }
+
+        return processed
     }
 
     private func tileStarts(for dimension: Int) -> [Int] {
