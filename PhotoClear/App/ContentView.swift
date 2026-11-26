@@ -184,14 +184,14 @@ struct ContentView: View {
                         HStack {
                             badge("原图")
                             Spacer()
-                            badge(enhancedImage == nil ? "拖动对比" : "拖动对比")
+                            badge(previewZoom > 1.01 ? "放大查看" : "拖动对比")
                         }
                     }
                     .padding(12)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22))
                 .contentShape(RoundedRectangle(cornerRadius: 22))
-                .simultaneousGesture(
+                .highPriorityGesture(
                     MagnificationGesture()
                         .onChanged { value in
                             previewZoom = min(max(previewBaseZoom * value, 1), 5)
@@ -207,7 +207,7 @@ struct ContentView: View {
                         }
                 )
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
+                    DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             if previewZoom > 1.01 {
                                 previewDragOffset = value.translation
