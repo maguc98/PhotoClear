@@ -57,7 +57,7 @@ final class ImageEnhancementEngine {
             // Vibrance is subtle and helps faded colors without forcing saturation.
             let vibrance = CIFilter.vibrance()
             vibrance.inputImage = output
-            vibrance.amount = preset == .portrait ? 0.08 : 0.12
+            vibrance.amount = preset == .portrait ? Float(0.035 + intensity * 0.045) : Float(0.045 + intensity * 0.085)
             if let result = vibrance.outputImage { output = result }
 
             // Recover a little shadow detail; keep highlight changes conservative.
