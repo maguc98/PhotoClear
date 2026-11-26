@@ -18,7 +18,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - PhotoClear
+      - path: PhotoClear
+        excludes:
+          - Models/README.md
     settings:
       base:
         PRODUCT_NAME: PhotoClear
