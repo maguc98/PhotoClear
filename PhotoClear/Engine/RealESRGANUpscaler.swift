@@ -45,10 +45,10 @@ enum RealESRGANError: LocalizedError {
 final class RealESRGANUpscaler: @unchecked Sendable {
     static let shared = RealESRGANUpscaler()
 
-    private let modelName = "RealESRGAN_general_522_fp16"
-    private let modelInputSize = 522
+    private let modelName = "RealESRGAN_x4plus_fp16"
+    private let modelInputSize = 256
     private let modelScale = 4
-    private let tileSize = 512
+    private let tileSize = 224
     private let tileOverlap = 32
     private let maxOutputPixels = 36_000_000
 
