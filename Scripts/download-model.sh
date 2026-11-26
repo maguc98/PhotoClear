@@ -14,9 +14,9 @@ curl --fail --location --retry 3 --retry-delay 2 "$MODEL_URL" --output "$TEMP_DI
 echo "$MODEL_SHA256  $TEMP_DIR/$ARCHIVE_NAME" | shasum -a 256 --check
 unzip -q "$TEMP_DIR/$ARCHIVE_NAME" -d "$TEMP_DIR/extracted"
 
-MODEL_PATH="$(find "$TEMP_DIR/extracted" -type d -name "${MODEL_NAME}.mlpackage" -print -quit)"
+MODEL_PATH="$(find "$TEMP_DIR/extracted" -type d -name "RealESRGAN-x4plus.mlpackage" -print -quit)"
 if [[ -z "$MODEL_PATH" ]]; then
-  echo "Expected ${MODEL_NAME}.mlpackage was not found in the upstream model archive." >&2
+  echo "Expected RealESRGAN-x4plus.mlpackage was not found in the upstream model archive." >&2
   find "$TEMP_DIR/extracted" -maxdepth 4 -print >&2
   exit 1
 fi
