@@ -139,8 +139,8 @@ struct ContentView: View {
                             .padding(8)
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
-                            .mask(alignment: .leading) {
-                                Rectangle().frame(width: max(0, proxy.size.width * comparisonPosition))
+                            .mask(alignment: .trailing) {
+                                Rectangle().frame(width: max(0, proxy.size.width * (1 - comparisonPosition)))
                             }
                     }
 
@@ -163,7 +163,7 @@ struct ContentView: View {
 
                     VStack {
                         HStack {
-                            badge(enhancedImage == nil ? "原图" : "增强")
+                            badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
                             Spacer()
                             if previewZoom > 1.01 {
                                 Button {
@@ -187,7 +187,7 @@ struct ContentView: View {
                         HStack {
                             badge("原图")
                             Spacer()
-                            badge(previewZoom > 1.01 ? "放大查看" : "拖动对比")
+                            badge(enhancedImage == nil ? "待增强" : (previewZoom > 1.01 ? "增强图 · 放大查看" : "增强图 · 拖动对比"))
                         }
                     }
                     .padding(12)
