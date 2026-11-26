@@ -96,6 +96,9 @@ struct ContentView: View {
             .animation(.spring(response: 0.32, dampingFraction: 0.8), value: aiScale)
             .animation(.spring(response: 0.36, dampingFraction: 0.82), value: previewZoom)
             .animation(.easeInOut(duration: 0.24), value: isProcessing)
+            .sensoryFeedback(.selection, trigger: selectedPreset)
+            .sensoryFeedback(.selection, trigger: aiScale)
+            .animation(.linear(duration: 0.18), value: processingProgress)
         }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: selectedItem) { _, item in Task { await loadPhoto(item) } }
@@ -596,6 +599,7 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(processingProgress >= 1 ? "处理完成" : processingStage)
+                        .contentTransition(.opacity)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Color(red: 0.13, green: 0.19, blue: 0.29))
                         .lineLimit(1)
