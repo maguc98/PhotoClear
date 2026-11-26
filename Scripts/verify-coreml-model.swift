@@ -34,7 +34,7 @@ guard output.dataType == .float16 else {
     fatalError("Expected Float16 output, received \(output.dataType.rawValue).")
 }
 let outputShape = output.shape.map(\.intValue)
-guard outputShape == [1, 3, 2088, 2088] else {
+guard outputShape == [1, 3, 1024, 1024] else {
     fatalError("Unexpected output shape: \(outputShape)")
 }
 
