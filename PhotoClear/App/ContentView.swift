@@ -455,13 +455,33 @@ struct ContentView: View {
                         .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
                 }
                 Spacer(minLength: 3)
-                Picker("放大倍数", selection: $aiScale) {
-                    Text("2×").tag(2)
-                    Text("4×").tag(4)
+                HStack(spacing: 3) {
+                    ForEach([2, 4], id: \\.self) { scale in
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                                aiScale = scale
+                            }
+                        } label: {
+                            Text("\\(scale)×")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(aiScale == scale ? Color(red: 0.12, green: 0.48, blue: 0.86) : Color(red: 0.48, green: 0.56, blue: 0.66))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: compact ? 34 : 36)
+                                .background {
+                                    if aiScale == scale {
+                                        Capsule().fill(LinearGradient(colors: [Color.white, Color(red: 0.90, green: 0.96, blue: 1.0)], startPoint: .top, endPoint: .bottom))
+                                            .overlay(Capsule().stroke(Color.blue.opacity(0.12), lineWidth: 0.8))
+                                            .shadow(color: Color.blue.opacity(0.07), radius: 4, y: 1)
+                                    }
+                                }
+                        }
+                        .buttonStyle(PressScaleButtonStyle())
+                        .disabled(isProcessing)
+                    }
                 }
-                .pickerStyle(.segmented)
+                .padding(3)
+                .background(Color(red: 0.94, green: 0.96, blue: 0.985), in: Capsule())
                 .frame(width: compact ? 112 : 126)
-                .scaleEffect(compact ? 0.94 : 1)
                 .disabled(isProcessing)
             }
             .padding(.horizontal, 11)
@@ -588,12 +608,19 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.85), lineWidth: 1)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.78))
+                }
         }
-        .shadow(color: Color.black.opacity(0.13), radius: 20, y: 8)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+        }
+        .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.10), radius: 15, y: 6)
         .frame(maxWidth: 300)
         .animation(.spring(response: 0.38, dampingFraction: 0.84), value: processingProgress >= 1)
         .allowsHitTesting(false)
