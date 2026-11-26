@@ -522,46 +522,80 @@ final class RealESRGANUpscaler: @unchecked Sendable {
     ) -> CIImage {
         var processed = image
 
+        // Apply denoising conservatively after reconstruction. Night mode is
+        // allowed a stronger pass, while portraits keep skin texture intact.
         if settings.noiseReduction > 0.01 {
             let denoise = CIFilter.noiseReduction()
             denoise.inputImage = processed
-            denoise.noiseLevel = min(max(settings.noiseReduction * 0.022, 0.0), 0.035)
-            denoise.sharpness = 0.30
+            let modeFactor: Float = settings.mode == .portrait ? 0.72 : (settings.mode == .night ? 1.12 : 1.0)
+            denoise.noiseLevel = min(max(settings.noiseReduction * 0.022 * modeFactor, 0.0), 0.035)
+            denoise.sharpness = settings.mode == .portrait ? 0.18 : 0.30
             processed = denoise.outputImage ?? processed
         }
 
+        // Avoid a fixed aggressive sharpening pass. Landscape can be crisp,
+        // portraits and night scenes remain softer to prevent halos and waxy skin.
         let sharpen = CIFilter.sharpenLuminance()
         sharpen.inputImage = processed
-        sharpen.radius = 0.65 + settings.texture * 0.35
+        let radiusFactor: Float = settings.mode == .landscape ? 1.0 : 0.78
+        sharpen.radius = 0.55 + settings.texture * 0.32 * radiusFactor
+        let modeSharpness: Float = settings.mode == .portrait ? 0.62 : (settings.mode == .night ? 0.72 : 1.0)
         sharpen.sharpness = min(
-            max(settings.sharpening * 0.24 + settings.detailRecovery * 0.08 + settings.texture * 0.06, 0),
-            0.34
+            max((settings.sharpening * 0.22 + settings.detailRecovery * 0.07 + settings.texture * 0.045) * modeSharpness, 0),
+            0.28
         )
         processed = sharpen.outputImage ?? processed
 
         let color = CIFilter.colorControls()
         color.inputImage = processed
-        color.saturation = 1.0 - (1.0 - settings.colorPreservation) * 0.08
+        // Preserve source color rather than making the enhancement look saturated.
+        color.saturation = 1.0 - (1.0 - settings.colorPreservation) * 0.06
         processed = color.outputImage ?? processed
 
-        // Mix a small amount of a high-quality resize of the prepared original
-        // back into the result. This tempers invented micro-texture while keeping
-        // the model's larger-scale reconstruction and sharp edges.
+        let sourceResize = CIFilter.lanczosScaleTransform()
+        sourceResize.inputImage = sourceImage
+        sourceResize.scale = Float(outputScale)
+        sourceResize.aspectRatio = 1
+
+        guard let naturalBase = sourceResize.outputImage else { return processed }
+
+        // Texture realism guard: use source structure to decide where the AI
+        // reconstruction should dominate. Edges keep more AI detail; smooth
+        // regions (skin, sky, walls, shadows) fall back toward the clean resize,
+        // reducing invented grain, pores and repeated AI texture.
+        let edgeFilter = CIFilter.edges()
+        edgeFilter.inputImage = naturalBase
+        edgeFilter.intensity = 1.35
+        var edgeMask = edgeFilter.outputImage ?? naturalBase
+        edgeMask = edgeMask.applyingFilter(
+            "CIColorControls",
+            parameters: [kCIInputContrastKey: 1.7, kCIInputBrightnessKey: 0.08]
+        )
+        edgeMask = edgeMask.applyingFilter(
+            "CIGaussianBlur",
+            parameters: [kCIInputRadiusKey: 1.0]
+        ).cropped(to: processed.extent)
+
+        let edgeBlend = CIFilter.blendWithMask()
+        edgeBlend.inputImage = processed
+        edgeBlend.backgroundImage = naturalBase
+        edgeBlend.maskImage = edgeMask
+        var textureGuarded = edgeBlend.outputImage ?? processed
+
+        // Global naturalness blend remains a gentle final limiter. Higher
+        // output scales receive slightly more protection because interpolation
+        // cannot add trustworthy source detail at 8×/12×.
         if settings.naturalness > 0.01 {
-            let sourceResize = CIFilter.lanczosScaleTransform()
-            sourceResize.inputImage = sourceImage
-            sourceResize.scale = Float(outputScale)
-            sourceResize.aspectRatio = 1
-            if let naturalBase = sourceResize.outputImage {
-                let dissolve = CIFilter.dissolveTransition()
-                dissolve.inputImage = processed
-                dissolve.targetImage = naturalBase
-                dissolve.time = min(max(settings.naturalness * 0.15, 0), 0.15)
-                processed = dissolve.outputImage ?? processed
-            }
+            let scaleProtection = outputScale >= 8 ? 1.18 : 1.0
+            let blendAmount = min(max(settings.naturalness * 0.12 * scaleProtection, 0), 0.18)
+            let dissolve = CIFilter.dissolveTransition()
+            dissolve.inputImage = textureGuarded
+            dissolve.targetImage = naturalBase
+            dissolve.time = blendAmount
+            textureGuarded = dissolve.outputImage ?? textureGuarded
         }
 
-        return processed
+        return textureGuarded
     }
 
     private func tileStarts(for dimension: Int) -> [Int] {
