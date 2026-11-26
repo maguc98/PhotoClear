@@ -13,87 +13,101 @@ struct ContentView: View {
     @State private var aiScale = 2
     @State private var showMessage = false
     @State private var message = ""
+    @State private var showZoomViewer = false
 
     private let processor = ImageEnhancementEngine()
 
     var body: some View {
-        NavigationStack {
+        GeometryReader { geometry in
+            let compact = geometry.size.height < 750
             ZStack {
-                Color(red: 0.96, green: 0.97, blue: 0.99).ignoresSafeArea()
+                Color(red: 0.955, green: 0.968, blue: 0.985).ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 22) {
-                        header
+                VStack(spacing: compact ? 10 : 14) {
+                    header
 
-                        if let originalImage {
-                            imageComparison(originalImage)
-                            controls
-                        } else {
-                            importCard
-                        }
+                    if let originalImage {
+                        imageComparison(originalImage)
+                            .frame(maxHeight: .infinity, minHeight: 0)
 
-                        if isProcessing {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .tint(.blue)
-                                Text("正在本地增强照片…")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 8)
-                        }
-
-                        privacyNote
+                        compactControls(compact: compact)
+                    } else {
+                        importCard
+                            .frame(maxHeight: .infinity)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 32)
+
+                    if isProcessing {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.blue)
+                            Text("正在本地处理照片…")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    privacyNote
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, compact ? 6 : 12)
+                .padding(.bottom, 8)
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .onChange(of: selectedItem) { _, item in
-                Task { await loadPhoto(item) }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: selectedItem) { _, item in Task { await loadPhoto(item) } }
+        .fullScreenCover(isPresented: $showZoomViewer) {
+            if let originalImage {
+                ZoomComparisonView(original: originalImage, enhanced: enhancedImage)
             }
-            .alert("PhotoClear", isPresented: $showMessage) {
-                Button("好", role: .cancel) {}
-            } message: {
-                Text(message)
-            }
+        }
+        .alert("PhotoClear", isPresented: $showMessage) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(message)
         }
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("PHOTOCLEAR")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
                     .tracking(2)
                     .foregroundStyle(.blue)
-                Text("让照片重新清晰")
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.primary)
+                Text("照片清晰增强")
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
             }
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.blue)
-                .frame(width: 48, height: 48)
-                .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            if originalImage != nil {
+                PhotosPicker(selection: $selectedItem, matching: .images) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.blue)
+                        .frame(width: 42, height: 42)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .disabled(isProcessing)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: 42, height: 42)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 14))
+            }
         }
-        .padding(.top, 18)
     }
 
     private var importCard: some View {
         PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 Image(systemName: "photo.badge.plus")
                     .font(.system(size: 42))
                     .foregroundStyle(.blue)
-                Text("选择一张照片")
+                Text("选择照片开始增强")
                     .font(.title3.weight(.semibold))
-                Text("照片只会在这台设备上处理")
+                Text("导入、处理、对比和保存，一屏完成")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("从相册导入")
+                Text("从相册选择")
                     .font(.headline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 28)
@@ -101,32 +115,29 @@ struct ContentView: View {
                     .background(.blue, in: Capsule())
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 44)
-            .background(.white, in: RoundedRectangle(cornerRadius: 28))
+            .padding(.vertical, 28)
+            .background(.white, in: RoundedRectangle(cornerRadius: 26))
         }
         .buttonStyle(.plain)
     }
 
     private func imageComparison(_ image: UIImage) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 7) {
             GeometryReader { proxy in
                 ZStack {
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(Color.white)
-
+                    RoundedRectangle(cornerRadius: 22).fill(Color.white)
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: proxy.size.width - 16, height: proxy.size.height - 16)
+                        .padding(8)
 
                     if let enhancedImage {
                         Image(uiImage: enhancedImage)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: proxy.size.width - 16, height: proxy.size.height - 16)
+                            .padding(8)
                             .mask(alignment: .leading) {
-                                Rectangle()
-                                    .frame(width: max(0, (proxy.size.width - 16) * comparisonPosition))
+                                Rectangle().frame(width: max(0, proxy.size.width * comparisonPosition))
                             }
                     }
 
@@ -134,185 +145,149 @@ struct ContentView: View {
                         Rectangle()
                             .fill(.white)
                             .frame(width: 2)
-                            .shadow(color: .black.opacity(0.2), radius: 3)
                             .overlay {
                                 Circle()
                                     .fill(.white)
-                                    .frame(width: 36, height: 36)
-                                    .overlay {
-                                        Image(systemName: "arrow.left.and.right")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(.blue)
-                                    }
-                                    .shadow(color: .black.opacity(0.15), radius: 5, y: 2)
+                                    .frame(width: 34, height: 34)
+                                    .overlay(Image(systemName: "arrow.left.and.right")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.blue))
+                                    .shadow(color: .black.opacity(0.14), radius: 4, y: 1)
                             }
-                            .offset(x: (proxy.size.width - 16) * comparisonPosition - (proxy.size.width - 16) / 2)
+                            .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
                     }
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .contentShape(RoundedRectangle(cornerRadius: 24))
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard enhancedImage != nil else { return }
-                            let usableWidth = max(proxy.size.width - 16, 1)
-                            let localX = value.location.x - 8
-                            comparisonPosition = min(max(localX / usableWidth, 0), 1)
-                        }
-                )
-            }
-            .frame(height: 390)
 
-            HStack {
-                Label(enhancedImage == nil ? "原始照片" : "增强效果", systemImage: "sparkles")
-                Spacer()
-                Text(enhancedImage == nil ? "完成增强后可拖动对比" : "拖动中间滑块查看前后效果")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Label("原图", systemImage: "photo")
+                    VStack {
+                        HStack {
+                            badge(enhancedImage == nil ? "原图" : "增强")
+                            Spacer()
+                            Button {
+                                showZoomViewer = true
+                            } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(.black.opacity(0.45), in: Circle())
+                            }
+                            .accessibilityLabel("放大查看照片")
+                        }
+                        Spacer()
+                        HStack {
+                            badge("原图")
+                            Spacer()
+                            badge(enhancedImage == nil ? "拖动对比" : "拖动对比")
+                        }
+                    }
+                    .padding(12)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 22))
+                .contentShape(RoundedRectangle(cornerRadius: 22))
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    guard enhancedImage != nil else { return }
+                    comparisonPosition = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
+                })
             }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
         }
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("增强模式")
-                .font(.headline)
+    private func badge(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.48), in: Capsule())
+    }
 
-            HStack(spacing: 10) {
+    private func compactControls(compact: Bool) -> some View {
+        VStack(spacing: compact ? 8 : 10) {
+            HStack(spacing: 7) {
                 ForEach(EnhancementPreset.allCases) { preset in
                     Button {
                         selectedPreset = preset
-                        runEnhancement()
                     } label: {
-                        VStack(spacing: 8) {
+                        HStack(spacing: 5) {
                             Image(systemName: preset.symbol)
-                                .font(.system(size: 20))
                             Text(preset.title)
-                                .font(.caption.weight(.semibold))
                         }
+                        .font(.caption.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .foregroundStyle(selectedPreset == preset ? Color.blue : Color.primary)
-                        .background(
-                            selectedPreset == preset ? Color.blue.opacity(0.09) : Color.white,
-                            in: RoundedRectangle(cornerRadius: 16)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(selectedPreset == preset ? Color.blue.opacity(0.35) : Color.clear)
-                        }
+                        .padding(.vertical, 10)
+                        .foregroundStyle(selectedPreset == preset ? .blue : .primary)
+                        .background(selectedPreset == preset ? Color.blue.opacity(0.10) : Color.white, in: Capsule())
+                        .overlay(Capsule().stroke(selectedPreset == preset ? Color.blue.opacity(0.25) : Color.clear))
                     }
                     .buttonStyle(.plain)
                     .disabled(isProcessing)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Image(systemName: "cpu")
-                        .font(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 42, height: 42)
-                        .background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("AI 超分辨率")
-                            .font(.headline)
-                        Text("Real-ESRGAN · Core ML · 完全离线")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
+            HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("AI 超分")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Real-ESRGAN · 离线")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-
-                Picker("输出尺寸", selection: $aiScale) {
-                    Text("2× 放大").tag(2)
-                    Text("4× 放大").tag(4)
+                Spacer(minLength: 2)
+                Picker("放大倍数", selection: $aiScale) {
+                    Text("2×").tag(2)
+                    Text("4×").tag(4)
                 }
                 .pickerStyle(.segmented)
+                .frame(width: 112)
+                .disabled(isProcessing)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.white, in: RoundedRectangle(cornerRadius: 15))
+
+            HStack(spacing: 8) {
+                Button(action: runEnhancement) {
+                    Label("普通增强", systemImage: "wand.and.stars")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundStyle(.blue)
+                        .background(Color.blue.opacity(0.09), in: Capsule())
+                }
                 .disabled(isProcessing)
 
                 Button(action: runAIUpscale) {
-                    HStack {
-                        Image(systemName: "sparkles.rectangle.stack")
-                        Text(isProcessing ? "AI 正在处理…" : "开始 AI 超分增强")
-                    }
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .foregroundStyle(.white)
-                    .background(Color.blue, in: Capsule())
+                    Label(isProcessing ? "处理中" : "AI 放大", systemImage: "sparkles.rectangle.stack")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundStyle(.white)
+                        .background(.blue, in: Capsule())
                 }
                 .disabled(isProcessing)
 
-                Text("模型随 App 安装，照片不会上传。大尺寸照片会自动按设备内存限制调整处理尺寸。")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(16)
-            .background(Color.blue.opacity(0.045), in: RoundedRectangle(cornerRadius: 18))
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("增强强度")
-                    Spacer()
-                    Text("\(Int(strength * 100))%")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $strength, in: 0.1...1, onEditingChanged: { editing in
-                    if !editing { runEnhancement() }
-                })
-            }
-
-            Button(action: runEnhancement) {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text(isProcessing ? "正在处理…" : "开始增强")
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .foregroundStyle(.white)
-                .background(.blue, in: Capsule())
-            }
-            .disabled(isProcessing)
-
-            if enhancedImage != nil {
-                Button(action: saveEnhanced) {
-                    Label("保存增强照片", systemImage: "square.and.arrow.down")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .foregroundStyle(.blue)
-                        .background(Color.blue.opacity(0.08), in: Capsule())
+                if enhancedImage != nil {
+                    Button(action: saveEnhanced) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(.blue)
+                            .background(.white, in: Circle())
+                    }
+                    .accessibilityLabel("保存增强照片")
                 }
             }
-
-            PhotosPicker(selection: $selectedItem, matching: .images) {
-                Label("更换照片", systemImage: "photo.on.rectangle")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(isProcessing)
         }
-        .padding(20)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24))
+        .padding(10)
+        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 20))
     }
 
     private var privacyNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock.shield")
-                .foregroundStyle(.green)
-            Text("照片仅在本机处理，不会上传")
-                .font(.caption)
+        HStack(spacing: 5) {
+            Image(systemName: "lock.shield.fill").foregroundStyle(.green)
+            Text("完全本地处理 · 不上传照片")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .padding(.top, 4)
     }
 
     @MainActor
@@ -354,7 +329,6 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
-
         Task {
             do {
                 let result = try await RealESRGANUpscaler.shared.upscale(originalImage, outputScale: aiScale)
@@ -379,7 +353,6 @@ struct ContentView: View {
 
     private func saveEnhanced() {
         guard let enhancedImage else { return }
-
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 Task { @MainActor in
@@ -388,16 +361,11 @@ struct ContentView: View {
                 }
                 return
             }
-
             PHPhotoLibrary.shared().performChanges {
                 PHAssetChangeRequest.creationRequestForAsset(from: enhancedImage)
             } completionHandler: { success, error in
                 Task { @MainActor in
-                    if success {
-                        message = "增强后的照片已经保存到相册。"
-                    } else {
-                        message = "保存失败：\(error?.localizedDescription ?? "未知错误")"
-                    }
+                    message = success ? "增强后的照片已经保存到相册。" : "保存失败：\(error?.localizedDescription ?? "未知错误")"
                     showMessage = true
                 }
             }
@@ -405,11 +373,86 @@ struct ContentView: View {
     }
 }
 
+private struct ZoomComparisonView: View {
+    let original: UIImage
+    let enhanced: UIImage?
+    @Environment(\.dismiss) private var dismiss
+    @State private var zoom: CGFloat = 1
+    @State private var baseZoom: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var comparison: CGFloat = 0.5
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            GeometryReader { proxy in
+                ZStack {
+                    Image(uiImage: enhanced ?? original)
+                        .resizable()
+                        .scaledToFit()
+                        .scaleEffect(zoom)
+                        .offset(offset)
+                        .gesture(
+                            MagnificationGesture().onChanged { value in
+                                zoom = min(max(baseZoom * value, 1), 6)
+                            }.onEnded { _ in baseZoom = zoom
+                            }
+                        )
+                        .simultaneousGesture(DragGesture().onChanged { value in
+                            if zoom > 1 { offset = value.translation }
+                        })
+
+                    if enhanced != nil && zoom == 1 {
+                        Image(uiImage: original)
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(zoom)
+                            .mask(alignment: .leading) {
+                                Rectangle().frame(width: proxy.size.width * comparison)
+                            }
+                            .overlay(alignment: .leading) {
+                                Rectangle().fill(.white).frame(width: 2)
+                                    .offset(x: proxy.size.width * comparison)
+                            }
+                    }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    if enhanced != nil && zoom == 1 {
+                        comparison = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
+                    }
+                })
+            }
+
+            VStack {
+                HStack {
+                    Button("完成") { dismiss() }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(.white.opacity(0.15), in: Capsule())
+                    Spacer()
+                    Text(zoom > 1 ? "\(Int(zoom * 100))%" : (enhanced == nil ? "原图" : "增强效果 / 原图对比"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                Spacer()
+                Text("双指捏合放大 · 放大后拖动查看细节")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .padding(.bottom, 18)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+        }
+        .statusBarHidden()
+    }
+}
+
 enum EnhancementPreset: String, CaseIterable, Identifiable {
     case natural, clear, portrait
-
     var id: String { rawValue }
-
     var title: String {
         switch self {
         case .natural: "自然"
@@ -417,7 +460,6 @@ enum EnhancementPreset: String, CaseIterable, Identifiable {
         case .portrait: "人像"
         }
     }
-
     var symbol: String {
         switch self {
         case .natural: "leaf"
