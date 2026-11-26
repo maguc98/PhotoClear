@@ -125,6 +125,7 @@ struct ContentView: View {
                         .resizable()
                         .scaledToFit()
                         .padding(8)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .scaleEffect(previewZoom)
                         .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
 
@@ -133,6 +134,7 @@ struct ContentView: View {
                             .resizable()
                             .scaledToFit()
                             .padding(8)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
                             .mask(alignment: .trailing) {
