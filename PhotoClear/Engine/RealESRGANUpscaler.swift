@@ -410,8 +410,8 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                     outputX = cropLeft * modelScale + x
                     sampleCount = 1
                 } else {
-                    outputY = (cropTop + y / 2) * modelScale
-                    outputX = (cropLeft + x / 2) * modelScale
+                    outputY = cropTop * modelScale + y * 2
+                    outputX = cropLeft * modelScale + x * 2
                     sampleCount = 4
                 }
 
