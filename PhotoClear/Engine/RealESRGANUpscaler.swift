@@ -307,7 +307,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                 completedTiles += 1
                 let tileProgress = Double(completedTiles) / Double(totalTiles)
                 progress(0.12 + tileProgress * 0.78,
-                         "AI 正在重建细节 · \\(completedTiles)/\\(totalTiles)")
+                         "AI 正在重建细节 · \(completedTiles)/\(totalTiles)")
             }
         }
         progress(0.93, "正在优化高清画面…")
