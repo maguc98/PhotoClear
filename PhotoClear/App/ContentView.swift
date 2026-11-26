@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var previewBaseZoom: CGFloat = 1
     @State private var previewOffset: CGSize = .zero
     @State private var previewDragOffset: CGSize = .zero
+    @State private var dividerDragActive = false
 
     private let processor = ImageEnhancementEngine()
 
@@ -143,19 +144,34 @@ struct ContentView: View {
                     }
 
                     if enhancedImage != nil {
-                        Rectangle()
-                            .fill(.white)
-                            .frame(width: 2)
-                            .overlay {
-                                Circle()
-                                    .fill(.white)
-                                    .frame(width: 34, height: 34)
-                                    .overlay(Image(systemName: "arrow.left.and.right")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(.blue))
-                                    .shadow(color: .black.opacity(0.14), radius: 4, y: 1)
-                            }
-                            .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
+                        ZStack {
+                            Rectangle()
+                                .fill(.white)
+                                .frame(width: 2)
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 34, height: 34)
+                                .overlay(Image(systemName: "arrow.left.and.right")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.blue))
+                                .shadow(color: .black.opacity(0.14), radius: 4, y: 1)
+                        }
+                        .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
+                        .overlay {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 56, height: proxy.size.height)
+                                .contentShape(Rectangle())
+                                .offset(x: proxy.size.width * comparisonPosition - proxy.size.width / 2)
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            dividerDragActive = true
+                                            comparisonPosition = min(max((proxy.size.width * comparisonPosition + value.translation.width) / max(proxy.size.width, 1), 0), 1)
+                                        }
+                                        .onEnded { _ in dividerDragActive = false }
+                                )
+                        }
                     }
 
                     VStack {
@@ -209,14 +225,16 @@ struct ContentView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
-                            if previewZoom > 1.01 {
+                            if dividerDragActive {
+                                // The dedicated divider handle owns this drag.
+                            } else if previewZoom > 1.01 {
                                 previewDragOffset = value.translation
                             } else if enhancedImage != nil {
                                 comparisonPosition = min(max(value.location.x / max(proxy.size.width, 1), 0), 1)
                             }
                         }
                         .onEnded { value in
-                            if previewZoom > 1.01 {
+                            if !dividerDragActive && previewZoom > 1.01 {
                                 previewOffset.width += value.translation.width
                                 previewOffset.height += value.translation.height
                                 previewDragOffset = .zero
