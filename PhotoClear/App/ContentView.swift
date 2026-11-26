@@ -359,15 +359,24 @@ struct ContentView: View {
                             case 1, 3:
                                 comparisonPosition = min(max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
                             case 2:
-                                previewDragOffset = value.translation
+                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
+                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                previewDragOffset = CGSize(
+                                    width: min(max(previewOffset.width + value.translation.width, -maxX), maxX) - previewOffset.width,
+                                    height: min(max(previewOffset.height + value.translation.height, -maxY), maxY) - previewOffset.height
+                                )
                             default:
                                 break
                             }
                         }
                         .onEnded { value in
                             if previewDragMode == 2 {
-                                previewOffset.width += value.translation.width
-                                previewOffset.height += value.translation.height
+                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
+                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                previewOffset = CGSize(
+                                    width: min(max(previewOffset.width + value.translation.width, -maxX), maxX),
+                                    height: min(max(previewOffset.height + value.translation.height, -maxY), maxY)
+                                )
                             }
                             previewDragOffset = .zero
                             previewDragMode = 0
