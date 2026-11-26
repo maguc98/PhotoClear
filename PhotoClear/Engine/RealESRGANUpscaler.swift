@@ -224,7 +224,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
 
                 let inputArray: MLMultiArray
                 do {
-                    inputArray = try MLMultiArray(shape: inputShape, dataType: .float32)
+                    inputArray = try MLMultiArray(shape: inputShape, dataType: .float16)
                 } catch {
                     throw RealESRGANError.processingFailed("无法创建模型输入：\(error.localizedDescription)")
                 }
@@ -257,7 +257,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                 }
 
                 guard let outputArray = prediction.featureValue(for: outputName)?.multiArrayValue,
-                      outputArray.dataType == .float32,
+                      outputArray.dataType == .float16,
                       outputArray.shape.count == 4,
                       outputArray.shape[1].intValue == 3,
                       outputArray.shape[2].intValue >= modelInputSize * modelScale,
@@ -349,7 +349,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         let channelStride = strides[1]
         let rowStride = strides[2]
         let columnStride = strides[3]
-        let pointer = input.dataPointer.assumingMemoryBound(to: Float.self)
+        let pointer = input.dataPointer.assumingMemoryBound(to: Float16.self)
 
         for y in 0..<modelInputSize {
             let sourceY = min(imageHeight - 1, tileY + reflectedCoordinate(y, length: tileHeight))
@@ -358,9 +358,9 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                 let sourceOffset = (sourceY * imageWidth + sourceX) * 4
                 let targetOffset = y * rowStride + x * columnStride
 
-                pointer[targetOffset] = Float(sourcePixels[sourceOffset]) / 255
-                pointer[targetOffset + channelStride] = Float(sourcePixels[sourceOffset + 1]) / 255
-                pointer[targetOffset + channelStride * 2] = Float(sourcePixels[sourceOffset + 2]) / 255
+                pointer[targetOffset] = Float16(Float(sourcePixels[sourceOffset]) / 255.0)
+                pointer[targetOffset + channelStride] = Float16(Float(sourcePixels[sourceOffset + 1]) / 255.0)
+                pointer[targetOffset + channelStride * 2] = Float16(Float(sourcePixels[sourceOffset + 2]) / 255.0)
             }
         }
     }
@@ -384,7 +384,7 @@ final class RealESRGANUpscaler: @unchecked Sendable {
         let channelStride = outputStrides[1]
         let rowStride = outputStrides[2]
         let columnStride = outputStrides[3]
-        let outputValues = output.dataPointer.assumingMemoryBound(to: Float.self)
+        let outputValues = output.dataPointer.assumingMemoryBound(to: Float16.self)
 
         let contentWidth = max(0, tileWidth - cropLeft - cropRight)
         let contentHeight = max(0, tileHeight - cropTop - cropBottom)
@@ -424,9 +424,9 @@ final class RealESRGANUpscaler: @unchecked Sendable {
                         let sourceY = outputY + sampleY
                         let sourceX = outputX + sampleX
                         let base = sourceY * rowStride + sourceX * columnStride
-                        red += outputValues[base]
-                        green += outputValues[channelStride + base]
-                        blue += outputValues[channelStride * 2 + base]
+                        red += Float(outputValues[base])
+                        green += Float(outputValues[channelStride + base])
+                        blue += Float(outputValues[channelStride * 2 + base])
                     }
                 }
 
