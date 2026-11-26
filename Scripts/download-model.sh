@@ -11,7 +11,7 @@ TEMP_DIR="${RUNNER_TEMP:-/tmp}/photoclear-model"
 mkdir -p "$MODEL_DIR" "$TEMP_DIR"
 rm -rf "$TEMP_DIR"/*
 curl --fail --location --retry 3 --retry-delay 2 "$MODEL_URL" --output "$TEMP_DIR/$ARCHIVE_NAME"
-echo "$MODEL_SHA256  $TEMP_DIR/$ARCHIVE_NAME" | shasum --check --algorithm 256
+echo "$MODEL_SHA256  $TEMP_DIR/$ARCHIVE_NAME" | shasum -a 256 --check
 unzip -q "$TEMP_DIR/$ARCHIVE_NAME" -d "$TEMP_DIR/extracted"
 
 MODEL_PATH="$(find "$TEMP_DIR/extracted" -type d -name "${MODEL_NAME}.mlpackage" -print -quit)"
