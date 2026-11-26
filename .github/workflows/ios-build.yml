@@ -5,17 +5,24 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build and package iOS app
     runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install XcodeGen
         run: brew install xcodegen
+
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Build simulator
+
+      - name: Build iOS Simulator
         run: |
           xcodebuild \
             -project PhotoClear.xcodeproj \
@@ -23,5 +30,34 @@ jobs:
             -sdk iphonesimulator \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/SimulatorDerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Build unsigned iOS device app
+        run: |
+          xcodebuild \
+            -project PhotoClear.xcodeproj \
+            -scheme PhotoClear \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DeviceDerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
+          test -d "$APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr PhotoClear-unsigned.ipa Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoClear-unsigned-IPA
+          path: PhotoClear-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
