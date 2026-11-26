@@ -57,12 +57,19 @@ jobs:
         run: |
           APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
           test -d "$APP_PATH"
-          find "$APP_PATH" -maxdepth 2 -name 'RealESRGAN_general_522_fp16.mlmodelc' -print -quit | grep -q .
+          MODEL_PATH="$(find "$APP_PATH" -type d -name 'RealESRGAN_x4plus_fp16.mlmodelc' -print -quit)"
+if [[ -z "$MODEL_PATH" ]]; then
+  echo "Compiled Core ML model was not found in the app bundle." >&2
+  find "$APP_PATH" -maxdepth 5 -print >&2
+  exit 1
+fi
+printf 'Found compiled model: %s\n' "$MODEL_PATH"
 
       - name: Smoke-test Core ML model prediction
         run: |
           APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
-          swift Scripts/verify-coreml-model.swift "$APP_PATH/RealESRGAN_general_522_fp16.mlmodelc"
+          MODEL_PATH="$(find "$APP_PATH" -type d -name 'RealESRGAN_x4plus_fp16.mlmodelc' -print -quit)"
+swift Scripts/verify-coreml-model.swift "$MODEL_PATH"
 
       - name: Package unsigned iOS IPA
         run: |
