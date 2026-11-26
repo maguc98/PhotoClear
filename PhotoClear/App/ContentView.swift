@@ -193,9 +193,8 @@ struct ContentView: View {
                     if isProcessing || processingProgress >= 1 {
                         processingStatus
                             .padding(.horizontal, 14)
-                            .padding(.bottom, 14)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .transition(.opacity.combined(with: .scale))
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22))
