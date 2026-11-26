@@ -55,6 +55,11 @@ jobs:
           test -d "$APP_PATH"
           find "$APP_PATH" -maxdepth 2 -name 'RealESRGAN_general_522_fp16.mlmodelc' -print -quit | grep -q .
 
+      - name: Smoke-test Core ML model prediction
+        run: |
+          APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
+          swift Scripts/verify-coreml-model.swift "$APP_PATH/RealESRGAN_general_522_fp16.mlmodelc"
+
       - name: Package unsigned iOS IPA
         run: |
           APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
