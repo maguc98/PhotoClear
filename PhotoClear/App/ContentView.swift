@@ -456,13 +456,13 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 3)
                 HStack(spacing: 3) {
-                    ForEach([2, 4], id: \\.self) { scale in
+                    ForEach([2, 4], id: \.self) { scale in
                         Button {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
                                 aiScale = scale
                             }
                         } label: {
-                            Text("\\(scale)×")
+                            Text("\(scale)×")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(aiScale == scale ? Color(red: 0.12, green: 0.48, blue: 0.86) : Color(red: 0.48, green: 0.56, blue: 0.66))
                                 .frame(maxWidth: .infinity)
