@@ -435,6 +435,27 @@ struct ContentView: View {
             .padding(4)
             .background(Color(red: 0.965, green: 0.973, blue: 0.988), in: Capsule())
 
+            HStack(spacing: 9) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.blue)
+                Text("增强强度")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.43, green: 0.51, blue: 0.62))
+                Slider(value: $strength, in: 0.15...1.0)
+                    .tint(Color(red: 0.22, green: 0.59, blue: 0.94))
+                    .disabled(isProcessing)
+                Text("\\(Int(strength * 100))%")
+                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color(red: 0.18, green: 0.51, blue: 0.84))
+                    .frame(width: 30, alignment: .trailing)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, compact ? 2 : 4)
+            .background(Color(red: 0.975, green: 0.985, blue: 0.998), in: Capsule())
+            .animation(.easeOut(duration: 0.16), value: strength)
+
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
