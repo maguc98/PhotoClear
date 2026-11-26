@@ -445,7 +445,7 @@ struct ContentView: View {
                 Slider(value: $strength, in: 0.15...1.0)
                     .tint(Color(red: 0.22, green: 0.59, blue: 0.94))
                     .disabled(isProcessing)
-                Text("\\(Int(strength * 100))%")
+                Text("\(Int(strength * 100))%")
                     .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(Color(red: 0.18, green: 0.51, blue: 0.84))
                     .frame(width: 30, alignment: .trailing)
