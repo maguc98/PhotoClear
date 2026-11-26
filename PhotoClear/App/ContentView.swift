@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var previewOffset: CGSize = .zero
     @State private var previewDragOffset: CGSize = .zero
     @State private var dividerDragActive = false
+    @State private var dividerDragStartPosition: CGFloat = 0.5
 
     private let processor = ImageEnhancementEngine()
 
@@ -166,8 +167,11 @@ struct ContentView: View {
                                 .gesture(
                                     DragGesture(minimumDistance: 0)
                                         .onChanged { value in
+                                            if !dividerDragActive {
+                                                dividerDragStartPosition = comparisonPosition
+                                            }
                                             dividerDragActive = true
-                                            comparisonPosition = min(max((proxy.size.width * comparisonPosition + value.translation.width) / max(proxy.size.width, 1), 0), 1)
+                                            comparisonPosition = min(max(dividerDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
                                         }
                                         .onEnded { _ in dividerDragActive = false }
                                 )
