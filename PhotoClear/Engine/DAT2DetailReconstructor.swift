@@ -7,6 +7,38 @@ import CoreGraphics
 import ImageIO
 import Darwin
 
+enum DAT2ComputeMode: Int, CaseIterable, Identifiable, Sendable {
+    case cpu = 0
+    case gpu = 1
+    case ane = 2
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .cpu: "CPU"
+        case .gpu: "GPU"
+        case .ane: "ANE"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .cpu: "兼容优先"
+        case .gpu: "图形处理器"
+        case .ane: "神经引擎"
+        }
+    }
+
+    var computeUnits: MLComputeUnits {
+        switch self {
+        case .cpu: .cpuOnly
+        case .gpu: .cpuAndGPU
+        case .ane: .cpuAndNeuralEngine
+        }
+    }
+}
+
 /// Bundled 4xBHI DAT2 photo-restoration model.
 /// Works on-device and processes large images as overlapping 512px tiles.
 final class DAT2DetailReconstructor: @unchecked Sendable {
@@ -20,6 +52,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
 
     private let modelLock = NSLock()
     private var cachedModel: MLModel?
+    private var cachedComputeMode: DAT2ComputeMode?
     private let ciContext = CIContext(options: [
         .useSoftwareRenderer: false,
         .cacheIntermediates: false
@@ -31,6 +64,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         _ image: UIImage,
         outputScale: Int,
         settings: EnhancementSettings,
+        computeMode: DAT2ComputeMode,
         progress: @escaping @Sendable (Double, String) -> Void,
         livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void = { _, _, _, _ in }
     ) async throws -> RealESRGANResult {
@@ -42,27 +76,30 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             image,
             outputScale: outputScale,
             settings: settings,
+            computeMode: computeMode,
             progress: progress,
             livePreview: livePreview
         )
     }
 
-    private func cachedModelValue() -> MLModel? {
+    private func cachedModelValue(for mode: DAT2ComputeMode) -> MLModel? {
         modelLock.lock()
         defer { modelLock.unlock() }
+        guard cachedComputeMode == mode else { return nil }
         return cachedModel
     }
 
-    private func storeModelValue(_ model: MLModel) -> MLModel {
+    private func storeModelValue(_ model: MLModel, for mode: DAT2ComputeMode) -> MLModel {
         modelLock.lock()
         defer { modelLock.unlock() }
-        if let cachedModel { return cachedModel }
+        if cachedComputeMode == mode, let cachedModel { return cachedModel }
         cachedModel = model
+        cachedComputeMode = mode
         return model
     }
 
-    private func loadModel() async throws -> MLModel {
-        if let existing = cachedModelValue() { return existing }
+    private func loadModel(using mode: DAT2ComputeMode) async throws -> MLModel {
+        if let existing = cachedModelValue(for: mode) { return existing }
 
         guard let modelURL =
             Bundle.main.url(forResource: modelName, withExtension: "mlmodelc", subdirectory: "Models")
@@ -70,14 +107,12 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             throw RealESRGANError.detailModelMissing
         }
 
-        // GPU acceleration is the first performance target on older iPhones.
-        // Keep ANE disabled for now because earlier builds stalled during ANE model compilation.
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuOnly
+        configuration.computeUnits = mode.computeUnits
 
         do {
             let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
-            return storeModelValue(model)
+            return storeModelValue(model, for: mode)
         } catch {
             throw RealESRGANError.processingFailed("DAT2 模型加载失败：\\(error.localizedDescription)")
         }
@@ -87,11 +122,12 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         _ image: UIImage,
         outputScale: Int,
         settings: EnhancementSettings,
+        computeMode: DAT2ComputeMode,
         progress: @Sendable (Double, String) -> Void,
         livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void
     ) async throws -> RealESRGANResult {
-        progress(0.02, "正在初始化 DAT2 AI 模型…")
-        let model = try await loadModel()
+        progress(0.02, "正在初始化 DAT2 · \(computeMode.title) 模式…")
+        let model = try await loadModel(using: computeMode)
         progress(0.06, "DAT2 模型已就绪，正在准备照片…")
 
         guard model.modelDescription.inputDescriptionsByName["image"]?.type == .image,
