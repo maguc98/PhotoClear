@@ -68,7 +68,7 @@ jobs:
           APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
           MODEL_PATH="$APP_PATH/Models/DAT2_Detail.mlmodelc"
           test -d "$MODEL_PATH"
-          printf 'Found embedded DAT2 model: %s\\n' "$MODEL_PATH"
+          printf 'Found embedded DAT2 model: %s\n' "$MODEL_PATH"
 
       - name: Smoke-test DAT2 Core ML prediction
         run: |
