@@ -15,6 +15,7 @@ struct ContentView: View {
     @AppStorage("photoclear.stackedUpscalingEnabled") private var stackedUpscalingEnabled = true
     @AppStorage("photoclear.dat2DetailEngineEnabled") private var dat2DetailEngineEnabled = false
     @AppStorage("photoclear.dat2.computeMode") private var dat2ComputeModeRaw = DAT2ComputeMode.cpu.rawValue
+    @AppStorage("photoclear.dat2.memoryBudgetGB") private var dat2MemoryBudgetGB = 1.8
     @AppStorage("photoclear.custom.detail") private var customDetail: Double = 0.52
     @AppStorage("photoclear.custom.sharpen") private var customSharpen: Double = 0.18
     @AppStorage("photoclear.custom.denoise") private var customDenoise: Double = 0.18
@@ -912,6 +913,32 @@ struct ContentView: View {
                 Text("不同设备的速度和稳定性因机型、系统及模型算子支持而异。")
                     .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(Color(red: 0.56, green: 0.62, blue: 0.70))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("DAT2 内存预算")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.66))
+                        Spacer()
+                        Text("\(dat2MemoryBudgetGB, specifier: "%.1f") GB")
+                            .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(Color.blue)
+                    }
+                    Slider(value: $dat2MemoryBudgetGB, in: 0.8...2.3, step: 0.1)
+                        .tint(Color(red: 0.24, green: 0.58, blue: 0.94))
+                        .disabled(isProcessing)
+                    HStack {
+                        Text("0.8 GB · 更稳妥")
+                        Spacer()
+                        Text("最高 2.3 GB")
+                    }
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.57, green: 0.63, blue: 0.71))
+                }
+                .padding(.top, 3)
+                Text("这是 DAT2 图像工作区预算，不是 iOS 强制 RAM 上限；系统内存紧张时仍可能提前终止 App。")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.58, green: 0.62, blue: 0.69))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 9)
@@ -1130,7 +1157,8 @@ struct ContentView: View {
                         originalImage,
                         outputScale: aiScale,
                         settings: enhancementSettings,
-                        computeMode: selectedDAT2ComputeMode
+                        computeMode: selectedDAT2ComputeMode,
+                        memoryBudgetGB: dat2MemoryBudgetGB
                     ) { progress, stage in
                         Task { @MainActor in
                             guard isProcessing else { return }
