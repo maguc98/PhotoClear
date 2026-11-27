@@ -129,7 +129,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         progress: @Sendable (Double, String) -> Void,
         livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void
     ) async throws -> RealESRGANResult {
-        progress(0.02, "正在初始化 DAT2 · \(computeMode.title) 模式… · 内存预算 \(String(format: "%.1f", clampedBudgetGB)) GB")
+        progress(0.02, "正在初始化 DAT2 · \(computeMode.title) 模式…")
         let model = try await loadModel(using: computeMode)
         progress(0.06, "DAT2 模型已就绪，正在准备照片…")
 
