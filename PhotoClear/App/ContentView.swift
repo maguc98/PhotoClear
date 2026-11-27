@@ -77,8 +77,8 @@ struct ContentView: View {
                             .frame(
                                 width: max(0, geometry.size.width - (compact ? 32 : 40)),
                                 height: geometry.size.height * (compact
-                                    ? (enhancementMode == .custom ? 0.25 : 0.35)
-                                    : (enhancementMode == .custom ? 0.32 : 0.40))
+                                    ? (enhancementMode == .custom ? 0.27 : 0.37)
+                                    : (enhancementMode == .custom ? 0.34 : 0.42))
                             )
                             .clipped()
                             .layoutPriority(0)
@@ -86,8 +86,8 @@ struct ContentView: View {
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
-                        Spacer(minLength: compact ? 18 : 22)
-                            .frame(maxHeight: compact ? 48 : 56)
+                        Spacer(minLength: compact ? 10 : 14)
+                            .frame(maxHeight: compact ? 34 : 42)
                             .layoutPriority(-1)
 
                         compactControls(compact: compact)
@@ -290,8 +290,8 @@ struct ContentView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: proxy.size.width, height: proxy.size.height)
-                        .padding(8)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(5)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .scaleEffect(previewZoom)
                         .offset(x: previewOffset.width + previewDragOffset.width,
                                 y: previewOffset.height + previewDragOffset.height)
@@ -307,8 +307,8 @@ struct ContentView: View {
                             .overlay {
                                 liveTileMarker(in: proxy.size)
                             }
-                            .padding(8)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .padding(5)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width,
                                     y: previewOffset.height + previewDragOffset.height)
@@ -318,8 +318,8 @@ struct ContentView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(width: proxy.size.width, height: proxy.size.height)
-                            .padding(8)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .padding(5)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width,
                                     y: previewOffset.height + previewDragOffset.height)
