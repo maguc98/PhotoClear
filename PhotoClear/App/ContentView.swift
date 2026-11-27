@@ -34,6 +34,8 @@ struct ContentView: View {
     @State private var encouragementIndex = 0
     @State private var processingTask: Task<Void, Never>?
     @State private var livePreviewImage: UIImage?
+    @State private var progressScrubValue: Double = 0
+    @State private var isProgressScrubbing = false
 
 
     var body: some View {
@@ -828,6 +830,7 @@ struct ContentView: View {
             }
 
             GeometryReader { geometry in
+                let shownProgress = isProgressScrubbing ? progressScrubValue : processingProgress
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(red: 0.89, green: 0.93, blue: 0.98))
                     Capsule()
@@ -835,11 +838,37 @@ struct ContentView: View {
                                              ? [Color(red: 0.24, green: 0.76, blue: 0.48), Color(red: 0.36, green: 0.84, blue: 0.62)]
                                              : [Color(red: 0.18, green: 0.64, blue: 1.0), Color(red: 0.34, green: 0.48, blue: 0.98)],
                                              startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(7, geometry.size.width * processingProgress))
+                        .frame(width: max(7, geometry.size.width * shownProgress))
                         .shadow(color: (processingProgress >= 1 ? Color.green : Color.blue).opacity(0.24), radius: 5, y: 1)
+
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 13, height: 13)
+                        .overlay(Circle().stroke(Color.blue.opacity(0.25), lineWidth: 1.5))
+                        .shadow(color: Color.blue.opacity(0.25), radius: 3, y: 1)
+                        .scaleEffect(isProgressScrubbing ? 1.35 : 1.0)
+                        .position(x: min(max(6.5, geometry.size.width * shownProgress), geometry.size.width - 6.5), y: geometry.size.height / 2)
+                        .animation(.spring(response: 0.28, dampingFraction: 0.58), value: isProgressScrubbing)
                 }
+                .contentShape(Rectangle().inset(by: -14))
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isProgressScrubbing = true
+                        let fraction = min(max(value.location.x / geometry.size.width, 0), 1)
+                        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.55, blendDuration: 0.15)) {
+                            progressScrubValue = fraction
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.42, dampingFraction: 0.48, blendDuration: 0.2)) {
+                            progressScrubValue = processingProgress
+                            isProgressScrubbing = false
+                        }
+                    })
             }
             .frame(height: 5)
+            .padding(.vertical, 9)
+            .accessibilityLabel("处理进度互动条，拖动可玩耍，释放后回到真实进度")
 
             if processingProgress < 1 {
                 HStack(spacing: 6) {
