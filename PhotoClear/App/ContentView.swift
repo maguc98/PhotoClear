@@ -67,7 +67,9 @@ struct ContentView: View {
 
                     if let originalImage {
                         imageComparison(originalImage)
-                            .frame(minHeight: 0, maxHeight: .infinity)
+                            // Reserve a predictable vertical zone for the preview so its
+                            // bottom badges never collide with the controls card.
+                            .frame(height: compact ? geometry.size.height * 0.43 : geometry.size.height * 0.50)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -475,7 +477,7 @@ struct ContentView: View {
                 }
                 .padding(3)
                 .background(Color(red: 0.94, green: 0.96, blue: 0.985), in: Capsule())
-                .frame(width: compact ? 152 : 176)
+                .frame(width: compact ? 136 : 164)
                 .disabled(isProcessing)
             }
             .padding(.horizontal, 11)
