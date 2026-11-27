@@ -70,10 +70,10 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             throw RealESRGANError.detailModelMissing
         }
 
-        // Asynchronous Core ML loading prevents synchronous model initialization
-        // from blocking the processing task. Use CPU-only initially to avoid a device-side ANE model compilation stall; profile before enabling ANE.
+        // GPU acceleration is the first performance target on older iPhones.
+        // Keep ANE disabled for now because earlier builds stalled during ANE model compilation.
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuOnly
+        configuration.computeUnits = .cpuAndGPU
 
         do {
             let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
@@ -267,24 +267,25 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 }
 
                 completedTiles += 1
-                // Publish a snapshot of the assembled output after each tile so users
-                // can inspect partial reconstruction and stop if artifacts appear.
-                stageContext.flush()
-                if let snapshot = stageContext.makeImage() {
-                    // Normalized tile coordinates let the UI mark the exact area
-                    // that was just reconstructed, independent of image resolution.
-                    let normalizedTileRect = CGRect(
-                        x: CGFloat(x0 + cropLeft) / CGFloat(width),
-                        y: CGFloat(y0 + cropTop) / CGFloat(height),
-                        width: CGFloat(contentWidth) / CGFloat(width),
-                        height: CGFloat(contentHeight) / CGFloat(height)
-                    )
-                    livePreview(
-                        UIImage(cgImage: snapshot),
-                        normalizedTileRect,
-                        completedTiles,
-                        totalTiles
-                    )
+                // Live preview snapshots are expensive for large canvases.
+                // Publish every second tile (and always the final tile) to reduce CI
+                // bitmap-copy/render overhead without making the UI feel stale.
+                if completedTiles.isMultiple(of: 2) || completedTiles == totalTiles {
+                    stageContext.flush()
+                    if let snapshot = stageContext.makeImage() {
+                        let normalizedTileRect = CGRect(
+                            x: CGFloat(x0 + cropLeft) / CGFloat(width),
+                            y: CGFloat(y0 + cropTop) / CGFloat(height),
+                            width: CGFloat(contentWidth) / CGFloat(width),
+                            height: CGFloat(contentHeight) / CGFloat(height)
+                        )
+                        livePreview(
+                            UIImage(cgImage: snapshot),
+                            normalizedTileRect,
+                            completedTiles,
+                            totalTiles
+                        )
+                    }
                 }
                 let fraction = Double(completedTiles) / Double(totalTiles)
                 progress(
