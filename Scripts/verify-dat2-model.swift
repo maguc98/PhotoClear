@@ -32,7 +32,6 @@ guard status == kCVReturnSuccess, let inputBuffer = pixelBuffer else {
 }
 
 CVPixelBufferLockBaseAddress(inputBuffer, [])
-defer { CVPixelBufferUnlockBaseAddress(inputBuffer, []) }
 guard let base = CVPixelBufferGetBaseAddress(inputBuffer) else {
     fatalError("DAT2 test image has no writable base address.")
 }
@@ -48,6 +47,7 @@ for y in 0..<512 {
         row[offset + 3] = 255
     }
 }
+CVPixelBufferUnlockBaseAddress(inputBuffer, [])
 
 let input = try MLDictionaryFeatureProvider(dictionary: [
     "image": MLFeatureValue(pixelBuffer: inputBuffer)
