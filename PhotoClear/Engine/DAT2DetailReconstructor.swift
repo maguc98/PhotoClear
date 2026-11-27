@@ -65,6 +65,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         outputScale: Int,
         settings: EnhancementSettings,
         computeMode: DAT2ComputeMode,
+        memoryBudgetGB: Double,
         progress: @escaping @Sendable (Double, String) -> Void,
         livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void = { _, _, _, _ in }
     ) async throws -> RealESRGANResult {
@@ -77,6 +78,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             outputScale: outputScale,
             settings: settings,
             computeMode: computeMode,
+            memoryBudgetGB: memoryBudgetGB,
             progress: progress,
             livePreview: livePreview
         )
@@ -123,10 +125,11 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         outputScale: Int,
         settings: EnhancementSettings,
         computeMode: DAT2ComputeMode,
+        memoryBudgetGB: Double,
         progress: @Sendable (Double, String) -> Void,
         livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void
     ) async throws -> RealESRGANResult {
-        progress(0.02, "正在初始化 DAT2 · \(computeMode.title) 模式…")
+        progress(0.02, "正在初始化 DAT2 · \(computeMode.title) 模式… · 内存预算 \(String(format: "%.1f", clampedBudgetGB)) GB")
         let model = try await loadModel(using: computeMode)
         progress(0.06, "DAT2 模型已就绪，正在准备照片…")
 
@@ -148,10 +151,19 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             by: CGAffineTransform(translationX: -sourceExtent.minX, y: -sourceExtent.minY)
         )
 
-        // Keep the model's 4x working image within the same 36 MP safety budget,
-        // even when the user chooses 2x, 8x, or 12x output.
+        // Treat the selected value as a soft DAT2 image-workspace budget, not
+        // an OS-enforced process memory limit. Keep most of it reserved for Core ML,
+        // model weights, the source image, and UIKit/Core Image working memory.
+        let clampedBudgetGB = min(max(memoryBudgetGB, 0.8), 2.3)
+        let budgetBytes = Double(clampedBudgetGB) * 1_073_741_824
+        let imageSurfaceBudgetBytes = budgetBytes * 0.18
+        let bytesPerInputPixel = Double(4 * (modelScale * modelScale + outputScale * outputScale)) * 1.6
+        let memoryLimitedInputPixels = max(1, Int(imageSurfaceBudgetBytes / bytesPerInputPixel))
+
+        // Keep the historical 36 MP output ceiling as a second, independent guard.
         let safeScale = max(outputScale, modelScale)
-        let maxInputPixels = maxOutputPixels / (safeScale * safeScale)
+        let hardInputPixelLimit = maxOutputPixels / (safeScale * safeScale)
+        let maxInputPixels = min(hardInputPixelLimit, memoryLimitedInputPixels)
         let originalPixels = originalWidth * originalHeight
         let wasDownscaled = originalPixels > maxInputPixels
         let resizeFactor = wasDownscaled
