@@ -29,9 +29,6 @@ struct ContentView: View {
     @State private var previewDragMode = 0 // 1: divider, 2: pan image, 3: compare
     @State private var previewDragStartPosition: CGFloat = 0.5
     @State private var hasAppeared = false
-    @State private var waitingTipIndex = 0
-    @State private var waitingFactExpanded = false
-    @State private var encouragementIndex = 0
     @State private var processingTask: Task<Void, Never>?
     @State private var livePreviewImage: UIImage?
     @State private var livePreviewTileRect: CGRect?
@@ -75,8 +72,8 @@ struct ContentView: View {
 
                     if let originalImage {
                         imageComparison(originalImage)
-                            // Reserve a predictable vertical zone for the preview so its
-                            // bottom badges never collide with the controls card.
+                            // The spacer below keeps the controls anchored at the bottom
+                            // while preserving a dedicated, non-overlapping photo viewport.
                             .frame(height: compact
                                    ? geometry.size.height * (enhancementMode == .custom ? 0.25 : 0.36)
                                    : geometry.size.height * (enhancementMode == .custom ? 0.33 : 0.43))
