@@ -77,8 +77,8 @@ struct ContentView: View {
                             .frame(
                                 width: max(0, geometry.size.width - (compact ? 32 : 40)),
                                 height: geometry.size.height * (compact
-                                    ? (enhancementMode == .custom ? 0.27 : 0.37)
-                                    : (enhancementMode == .custom ? 0.34 : 0.42))
+                                    ? (enhancementMode == .custom ? 0.28 : 0.38)
+                                    : (enhancementMode == .custom ? 0.35 : 0.43))
                             )
                             .clipped()
                             .layoutPriority(0)
@@ -86,8 +86,8 @@ struct ContentView: View {
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
-                        Spacer(minLength: compact ? 10 : 14)
-                            .frame(maxHeight: compact ? 34 : 42)
+                        Spacer(minLength: compact ? 6 : 10)
+                            .frame(maxHeight: compact ? 20 : 26)
                             .layoutPriority(-1)
 
                         compactControls(compact: compact)
@@ -282,15 +282,19 @@ struct ContentView: View {
     private func imageComparison(_ image: UIImage) -> some View {
         VStack(spacing: 7) {
             GeometryReader { proxy in
+                let photoWidth = max(proxy.size.width - 10, 1)
+                let photoHeight = max(proxy.size.height - 10, 1)
+                let photoSize = CGSize(width: photoWidth, height: photoHeight)
+
                 ZStack {
                     RoundedRectangle(cornerRadius: 30, style: .continuous)
                         .fill(.white.opacity(0.97))
 
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .padding(5)
+                        .scaledToFill()
+                        .frame(width: photoWidth, height: photoHeight)
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .scaleEffect(previewZoom)
                         .offset(x: previewOffset.width + previewDragOffset.width,
@@ -302,13 +306,13 @@ struct ContentView: View {
                         // visibly replace those regions with reconstructed detail.
                         Image(uiImage: livePreviewImage)
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .overlay {
-                                liveTileMarker(in: proxy.size)
-                            }
-                            .padding(5)
+                            .scaledToFill()
+                            .frame(width: photoWidth, height: photoHeight)
+                            .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .overlay {
+                                liveTileMarker(in: photoSize)
+                            }
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width,
                                     y: previewOffset.height + previewDragOffset.height)
@@ -316,16 +320,16 @@ struct ContentView: View {
                     } else if !isProcessing, let enhancedImage {
                         Image(uiImage: enhancedImage)
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .padding(5)
+                            .scaledToFill()
+                            .frame(width: photoWidth, height: photoHeight)
+                            .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width,
                                     y: previewOffset.height + previewDragOffset.height)
                             .mask(alignment: .trailing) {
                                 Rectangle()
-                                    .frame(width: max(0, proxy.size.width * (1 - comparisonPosition)))
+                                    .frame(width: max(0, photoWidth * (1 - comparisonPosition)))
                             }
                     }
 
@@ -353,8 +357,8 @@ struct ContentView: View {
                                 .shadow(color: Color.blue.opacity(0.18), radius: 10, y: 3)
                         }
                         .position(
-                            x: proxy.size.width * comparisonPosition,
-                            y: proxy.size.height / 2
+                            x: 5 + photoWidth * comparisonPosition,
+                            y: 5 + photoHeight / 2
                         )
                     }
 
@@ -480,7 +484,7 @@ struct ContentView: View {
                         .onChanged { value in
                             guard !isProcessing else { return }
                             if previewDragMode == 0 {
-                                let dividerX = proxy.size.width * comparisonPosition
+                                let dividerX = 5 + photoWidth * comparisonPosition
                                 let touchNearDivider = abs(value.startLocation.x - dividerX) <= 38
                                 previewDragStartPosition = comparisonPosition
                                 if enhancedImage != nil && touchNearDivider {
@@ -494,7 +498,7 @@ struct ContentView: View {
                             switch previewDragMode {
                             case 1, 3:
                                 comparisonPosition = min(
-                                    max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0),
+                                    max(previewDragStartPosition + value.translation.width / max(photoWidth, 1), 0),
                                     1
                                 )
                             case 2:
@@ -534,7 +538,7 @@ struct ContentView: View {
     private func liveTileMarker(in viewport: CGSize) -> some View {
         if let tileRect = livePreviewTileRect, let preview = livePreviewImage {
             let imageSize = preview.size
-            let scale = min(
+            let scale = max(
                 viewport.width / max(imageSize.width, 1),
                 viewport.height / max(imageSize.height, 1)
             )
