@@ -1127,7 +1127,8 @@ struct ContentView: View {
                     message = error.localizedDescription
                     showMessage = true
                 }
-            }        }
+            }
+        }
     }
 
     private func saveEnhanced() {
