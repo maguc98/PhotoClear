@@ -156,7 +156,10 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         // model weights, the source image, and UIKit/Core Image working memory.
         let clampedBudgetGB = min(max(memoryBudgetGB, 0.8), 2.3)
         let budgetBytes = Double(clampedBudgetGB) * 1_073_741_824
-        let imageSurfaceBudgetBytes = budgetBytes * 0.18
+        // On memory-constrained iPhones, reserve only 5% of the selected budget
+        // for the large preview/output surfaces. Core ML and system memory remain
+        // outside this app-level estimate and need headroom.
+        let imageSurfaceBudgetBytes = budgetBytes * 0.05
         let bytesPerInputPixel = Double(4 * (modelScale * modelScale + outputScale * outputScale)) * 1.6
         let memoryLimitedInputPixels = max(1, Int(imageSurfaceBudgetBytes / bytesPerInputPixel))
 
