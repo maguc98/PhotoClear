@@ -596,16 +596,16 @@ struct ContentView: View {
         .frame(width: windowWidth)
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color.white.opacity(0.97))
                 .overlay {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(LinearGradient(colors: [.white.opacity(0.62), .white.opacity(0.24)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(LinearGradient(colors: [Color.white, Color(red: 0.965, green: 0.979, blue: 0.995)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(.white.opacity(0.92), lineWidth: 1)
                 }
-                .shadow(color: Color.blue.opacity(0.17), radius: 24, y: 10)
+                .shadow(color: Color(red: 0.42, green: 0.57, blue: 0.78).opacity(0.13), radius: 16, y: 7)
         }
         .position(
             x: min(max(position.x, windowWidth / 2 + 8), screen.width - windowWidth / 2 - 8),
