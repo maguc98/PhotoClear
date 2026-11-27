@@ -73,7 +73,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         // GPU acceleration is the first performance target on older iPhones.
         // Keep ANE disabled for now because earlier builds stalled during ANE model compilation.
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuAndGPU
+        configuration.computeUnits = .cpuOnly
 
         do {
             let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
