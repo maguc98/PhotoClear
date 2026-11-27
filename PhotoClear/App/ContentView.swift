@@ -110,7 +110,7 @@ struct ContentView: View {
                     GeometryReader { floatingGeometry in
                         let cardWidth = min(300, floatingGeometry.size.width - 28)
                         let cardHeight: CGFloat = waitingFactExpanded ? 190 : 150
-                        let defaultY = floatingGeometry.size.height * 0.43
+                        let defaultY = floatingGeometry.size.height * 0.34
 
                         processingStatus
                             .frame(width: cardWidth)
