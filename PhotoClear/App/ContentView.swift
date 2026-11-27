@@ -34,6 +34,8 @@ struct ContentView: View {
     @State private var livePreviewTileRect: CGRect?
     @State private var livePreviewTileIndex = 0
     @State private var livePreviewTileCount = 0
+    @State private var floatingProgressPosition: CGPoint?
+    @State private var floatingProgressDragStart: CGPoint?
 
 
     var body: some View {
@@ -109,9 +111,22 @@ struct ContentView: View {
                 .padding(.top, compact ? 5 : 12)
                 .padding(.bottom, compact ? 5 : 10)
             }
+            .overlay(alignment: .topLeading) {
+                if isProcessing {
+                    floatingProcessingWindow(in: geometry.size)
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.82, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.92).combined(with: .opacity)
+                        ))
+                        .zIndex(100)
+                }
+            }
             .onAppear {
                 withAnimation(.spring(response: 0.62, dampingFraction: 0.82).delay(0.06)) {
                     hasAppeared = true
+                }
+                if floatingProgressPosition == nil {
+                    floatingProgressPosition = CGPoint(x: geometry.size.width / 2, y: 150)
                 }
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: originalImage != nil)
@@ -364,51 +379,7 @@ struct ContentView: View {
 
                     VStack {
                         if isProcessing {
-                            HStack(spacing: 8) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(Color.blue)
-                                Text("DAT2 实时重构")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.14, green: 0.20, blue: 0.31))
-                                Spacer(minLength: 2)
-                                Text("\(Int(processingProgress * 100))%")
-                                    .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
-                                    .foregroundStyle(Color.blue)
-                                    .contentTransition(.numericText())
-                                Button {
-                                    processingTask?.cancel()
-                                    processingTask = nil
-                                    isProcessing = false
-                                    livePreviewImage = nil
-                                    livePreviewTileRect = nil
-                                    livePreviewTileIndex = 0
-                                    livePreviewTileCount = 0
-                                    enhancedImage = nil
-                                    processingProgress = 0
-                                    processingStage = "已停止处理"
-                                } label: {
-                                    Image(systemName: "stop.fill")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(.red)
-                                        .frame(width: 28, height: 28)
-                                        .background(Color.red.opacity(0.09), in: Circle())
-                                }
-                                .accessibilityLabel("停止 AI 处理")
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.92), lineWidth: 1))
-
-                            Text(livePreviewTileCount > 0
-                                 ? "刚完成第 \(livePreviewTileIndex)/\(livePreviewTileCount) 块 · 正在继续重构"
-                                 : processingStage)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.45, green: 0.54, blue: 0.66))
-                                .lineLimit(1)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 3)
+                            EmptyView()
                         } else {
                             HStack {
                                 badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
@@ -544,6 +515,116 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    private func floatingProcessingWindow(in screen: CGSize) -> some View {
+        let windowWidth = min(screen.width - 36, 340)
+        let defaultPosition = CGPoint(x: screen.width / 2, y: 150)
+        let position = floatingProgressPosition ?? defaultPosition
+
+        return VStack(spacing: 9) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Color.blue.opacity(0.10)).frame(width: 38, height: 38)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.blue)
+                        .symbolEffect(.pulse, options: .repeating)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI 正在重构照片")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.20, blue: 0.33))
+                    Text(livePreviewTileCount > 0 ? "正在处理细节 · \(livePreviewTileIndex)/\(livePreviewTileCount) 块" : processingStage)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color(red: 0.46, green: 0.55, blue: 0.67))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 2)
+                Text("\(Int(processingProgress * 100))%")
+                    .font(.system(size: 16, weight: .heavy, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color.blue)
+                    .contentTransition(.numericText())
+                Button {
+                    processingTask?.cancel()
+                    processingTask = nil
+                    isProcessing = false
+                    livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
+                    enhancedImage = nil
+                    processingProgress = 0
+                    processingStage = "已停止处理"
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.red)
+                        .frame(width: 30, height: 30)
+                        .background(Color.red.opacity(0.10), in: Circle())
+                }
+                .accessibilityLabel("停止 AI 处理")
+            }
+
+            GeometryReader { bar in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.blue.opacity(0.10))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color.cyan, Color.blue, Color(red: 0.38, green: 0.55, blue: 0.98)], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(4, bar.size.width * processingProgress))
+                    Capsule().fill(.white.opacity(0.65))
+                        .frame(width: 34)
+                        .offset(x: max(0, min(bar.size.width - 34, bar.size.width * processingProgress - 17)))
+                        .blur(radius: 2)
+                        .opacity(processingProgress < 1 ? 0.8 : 0)
+                }
+            }
+            .frame(height: 5)
+            .clipShape(Capsule())
+
+            HStack(spacing: 6) {
+                Image(systemName: "hand.draw").font(.system(size: 9, weight: .semibold))
+                Text("长按拖动 · 可放置在任意位置").font(.system(size: 9, weight: .medium))
+                Spacer()
+                if livePreviewTileCount > 0 {
+                    Text("实时预览").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.blue)
+                }
+            }
+            .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.67))
+        }
+        .padding(12)
+        .frame(width: windowWidth)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(0.62), .white.opacity(0.24)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.white.opacity(0.92), lineWidth: 1)
+                }
+                .shadow(color: Color.blue.opacity(0.17), radius: 24, y: 10)
+        }
+        .position(
+            x: min(max(position.x, windowWidth / 2 + 8), screen.width - windowWidth / 2 - 8),
+            y: min(max(position.y, 72), screen.height - 80)
+        )
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { value in
+                    if floatingProgressDragStart == nil { floatingProgressDragStart = position }
+                    guard let start = floatingProgressDragStart else { return }
+                    floatingProgressPosition = CGPoint(
+                        x: min(max(start.x + value.translation.width, windowWidth / 2 + 8), screen.width - windowWidth / 2 - 8),
+                        y: min(max(start.y + value.translation.height, 72), screen.height - 80)
+                    )
+                }
+                .onEnded { _ in floatingProgressDragStart = nil }
+        )
+        .animation(.spring(response: 0.36, dampingFraction: 0.76), value: processingProgress)
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: livePreviewTileIndex)
     }
 
     @ViewBuilder
