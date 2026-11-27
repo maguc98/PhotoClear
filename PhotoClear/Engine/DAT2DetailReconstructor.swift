@@ -32,7 +32,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         outputScale: Int,
         settings: EnhancementSettings,
         progress: @escaping @Sendable (Double, String) -> Void,
-        livePreview: @escaping @Sendable (UIImage) -> Void = { _ in }
+        livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void = { _, _, _, _ in }
     ) async throws -> RealESRGANResult {
         guard [2, 4, 8, 12].contains(outputScale) else {
             throw RealESRGANError.processingFailed("DAT2 细节重构仅支持 2×、4×、8× 和 12× 输出。")
@@ -88,7 +88,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         outputScale: Int,
         settings: EnhancementSettings,
         progress: @Sendable (Double, String) -> Void,
-        livePreview: @escaping @Sendable (UIImage) -> Void
+        livePreview: @escaping @Sendable (UIImage, CGRect, Int, Int) -> Void
     ) async throws -> RealESRGANResult {
         progress(0.02, "正在初始化 DAT2 AI 模型…")
         let model = try await loadModel()
@@ -271,7 +271,20 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 // can inspect partial reconstruction and stop if artifacts appear.
                 stageContext.flush()
                 if let snapshot = stageContext.makeImage() {
-                    livePreview(UIImage(cgImage: snapshot))
+                    // Normalized tile coordinates let the UI mark the exact area
+                    // that was just reconstructed, independent of image resolution.
+                    let normalizedTileRect = CGRect(
+                        x: CGFloat(x0 + cropLeft) / CGFloat(width),
+                        y: CGFloat(y0 + cropTop) / CGFloat(height),
+                        width: CGFloat(contentWidth) / CGFloat(width),
+                        height: CGFloat(contentHeight) / CGFloat(height)
+                    )
+                    livePreview(
+                        UIImage(cgImage: snapshot),
+                        normalizedTileRect,
+                        completedTiles,
+                        totalTiles
+                    )
                 }
                 let fraction = Double(completedTiles) / Double(totalTiles)
                 progress(
