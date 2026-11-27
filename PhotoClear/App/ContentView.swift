@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var enhancementMode: EnhancementMode = .natural
     @AppStorage("photoclear.stackedUpscalingEnabled") private var stackedUpscalingEnabled = true
     @AppStorage("photoclear.dat2DetailEngineEnabled") private var dat2DetailEngineEnabled = false
+    @AppStorage("photoclear.dat2.computeMode") private var dat2ComputeModeRaw = DAT2ComputeMode.cpu.rawValue
     @AppStorage("photoclear.custom.detail") private var customDetail: Double = 0.52
     @AppStorage("photoclear.custom.sharpen") private var customSharpen: Double = 0.18
     @AppStorage("photoclear.custom.denoise") private var customDenoise: Double = 0.18
@@ -34,6 +35,10 @@ struct ContentView: View {
     @State private var livePreviewTileRect: CGRect?
     @State private var livePreviewTileIndex = 0
     @State private var livePreviewTileCount = 0
+    private var selectedDAT2ComputeMode: DAT2ComputeMode {
+        DAT2ComputeMode(rawValue: dat2ComputeModeRaw) ?? .cpu
+    }
+
     @State private var floatingProgressPosition: CGPoint?
     @State private var floatingProgressDragStart: CGPoint?
 
@@ -871,6 +876,43 @@ struct ContentView: View {
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Color(red: 0.53, green: 0.60, blue: 0.69))
                 .fixedSize(horizontal: false, vertical: true)
+            if dat2DetailEngineEnabled {
+                HStack(spacing: 6) {
+                    Text("推理设备")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.66))
+                    Spacer(minLength: 3)
+                    ForEach(DAT2ComputeMode.allCases) { mode in
+                        Button {
+                            guard !isProcessing else { return }
+                            withAnimation(.spring(response: 0.26, dampingFraction: 0.76)) {
+                                dat2ComputeModeRaw = mode.rawValue
+                            }
+                        } label: {
+                            Text(mode.title)
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundStyle(selectedDAT2ComputeMode == mode
+                                    ? .white
+                                    : Color(red: 0.38, green: 0.48, blue: 0.61))
+                                .frame(width: 48, height: 27)
+                                .background {
+                                    Capsule()
+                                        .fill(selectedDAT2ComputeMode == mode
+                                            ? LinearGradient(colors: [Color(red: 0.20, green: 0.61, blue: 0.98), Color(red: 0.25, green: 0.43, blue: 0.92)], startPoint: .leading, endPoint: .trailing)
+                                            : LinearGradient(colors: [.white, Color(red: 0.95, green: 0.97, blue: 0.99)], startPoint: .top, endPoint: .bottom))
+                                }
+                                .overlay(Capsule().stroke(selectedDAT2ComputeMode == mode ? Color.white.opacity(0.4) : Color.blue.opacity(0.08), lineWidth: 1))
+                        }
+                        .buttonStyle(PressScaleButtonStyle())
+                        .disabled(isProcessing)
+                        .accessibilityLabel("\(mode.title) · \(mode.subtitle)")
+                    }
+                }
+                .padding(.top, 4)
+                Text("不同设备的速度和稳定性因机型、系统及模型算子支持而异。")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.56, green: 0.62, blue: 0.70))
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
@@ -1087,7 +1129,8 @@ struct ContentView: View {
                     result = try await DAT2DetailReconstructor.shared.upscale(
                         originalImage,
                         outputScale: aiScale,
-                        settings: enhancementSettings
+                        settings: enhancementSettings,
+                        computeMode: selectedDAT2ComputeMode
                     ) { progress, stage in
                         Task { @MainActor in
                             guard isProcessing else { return }
