@@ -47,11 +47,11 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         }.value
     }
 
-    private func loadModel() throws -> MLModel {
+    private func loadModel() async throws -> MLModel {
         modelLock.lock()
-        defer { modelLock.unlock() }
-
-        if let cachedModel { return cachedModel }
+        let existing = cachedModel
+        modelLock.unlock()
+        if let existing { return existing }
 
         guard let modelURL =
             Bundle.main.url(forResource: modelName, withExtension: "mlmodelc", subdirectory: "Models")
@@ -59,15 +59,23 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             throw RealESRGANError.detailModelMissing
         }
 
+        // Asynchronous Core ML loading prevents synchronous model initialization
+        // from blocking the processing task. Prefer CPU + Neural Engine on A14.
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .all
+        configuration.computeUnits = .cpuAndNeuralEngine
 
         do {
-            let model = try MLModel(contentsOf: modelURL, configuration: configuration)
+            let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
+            modelLock.lock()
+            if let cachedModel {
+                modelLock.unlock()
+                return cachedModel
+            }
             cachedModel = model
+            modelLock.unlock()
             return model
         } catch {
-            throw RealESRGANError.processingFailed("DAT2 模型加载失败：\(error.localizedDescription)")
+            throw RealESRGANError.processingFailed("DAT2 模型加载失败：\\(error.localizedDescription)")
         }
     }
 
@@ -76,9 +84,10 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         outputScale: Int,
         settings: EnhancementSettings,
         progress: @Sendable (Double, String) -> Void
-    ) throws -> RealESRGANResult {
-        progress(0.02, "正在加载 DAT2 细节重构模型…")
-        let model = try loadModel()
+    ) async throws -> RealESRGANResult {
+        progress(0.02, "正在初始化 DAT2 AI 模型…")
+        let model = try await loadModel()
+        progress(0.06, "DAT2 模型已就绪，正在准备照片…")
 
         guard model.modelDescription.inputDescriptionsByName["image"]?.type == .image,
               model.modelDescription.outputDescriptionsByName["upscaled"]?.type == .image else {
