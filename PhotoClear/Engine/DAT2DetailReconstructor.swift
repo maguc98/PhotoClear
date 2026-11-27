@@ -206,6 +206,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                     : 0
                 let cropLeft = leftOverlap / 2
                 let cropRight = rightOverlap - rightOverlap / 2
+                let contentWidth = max(0, validWidth - cropLeft - cropRight)
+                let contentHeight = max(0, validHeight - cropTop - cropBottom)
 
                 try autoreleasepool {
                     let tileRect = CGRect(x: CGFloat(x0), y: CGFloat(y0), width: CGFloat(tileSize), height: CGFloat(tileSize))
@@ -241,8 +243,6 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                         throw RealESRGANError.processingFailed("无法读取 DAT2 输出图像。")
                     }
 
-                    let contentWidth = max(0, validWidth - cropLeft - cropRight)
-                    let contentHeight = max(0, validHeight - cropTop - cropBottom)
                     guard contentWidth > 0, contentHeight > 0,
                           let croppedOutput = outputCGImage.cropping(to: CGRect(
                             x: CGFloat(cropLeft * modelScale),
