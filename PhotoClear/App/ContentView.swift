@@ -70,7 +70,7 @@ struct ContentView: View {
                     .offset(x: -170, y: 320)
                     .allowsHitTesting(false)
 
-                VStack(spacing: compact ? 8 : 12) {
+                VStack(spacing: compact ? 12 : 14) {
                     header
                         .opacity(hasAppeared ? 1 : 0)
                         .offset(y: hasAppeared ? 0 : 10)
@@ -80,8 +80,8 @@ struct ContentView: View {
                             // Reserve a predictable vertical zone for the preview so its
                             // bottom badges never collide with the controls card.
                             .frame(height: compact
-                                   ? geometry.size.height * (enhancementMode == .custom ? 0.25 : 0.35)
-                                   : geometry.size.height * (enhancementMode == .custom ? 0.34 : 0.44))
+                                   ? geometry.size.height * (enhancementMode == .custom ? 0.22 : 0.32)
+                                   : geometry.size.height * (enhancementMode == .custom ? 0.30 : 0.40))
                             .layoutPriority(0)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
@@ -110,7 +110,7 @@ struct ContentView: View {
                     GeometryReader { floatingGeometry in
                         let cardWidth = min(300, floatingGeometry.size.width - 28)
                         let cardHeight: CGFloat = waitingFactExpanded ? 190 : 150
-                        let defaultY = floatingGeometry.size.height * 0.34
+                        let defaultY = floatingGeometry.size.height * 0.28
 
                         processingStatus
                             .frame(width: cardWidth)
@@ -123,40 +123,43 @@ struct ContentView: View {
                                        floatingGeometry.size.height - cardHeight / 2 - 12)
                             )
                             .overlay(alignment: .top) {
-                                Color.clear
-                                    .frame(width: 64, height: 22)
-                                    .overlay {
-                                        Capsule()
-                                            .fill(Color.blue.opacity(0.18))
-                                            .frame(width: 38, height: 4)
-                                    }
-                                    .contentShape(Rectangle())
-                                    .gesture(
-                                        DragGesture(minimumDistance: 2)
-                                            .onChanged { value in
-                                                if !isDraggingProcessingStatus {
-                                                    processingStatusDragStart = processingStatusOffset
-                                                    isDraggingProcessingStatus = true
-                                                }
-                                                let minX = cardWidth / 2 + 12
-                                                let maxX = floatingGeometry.size.width - cardWidth / 2 - 12
-                                                let minY = cardHeight / 2 + 12
-                                                let maxY = floatingGeometry.size.height - cardHeight / 2 - 12
-                                                let proposedX = floatingGeometry.size.width / 2
-                                                    + processingStatusDragStart.width + value.translation.width
-                                                let proposedY = defaultY
-                                                    + processingStatusDragStart.height + value.translation.height
-                                                processingStatusOffset = CGSize(
-                                                    width: min(max(proposedX, minX), maxX) - floatingGeometry.size.width / 2,
-                                                    height: min(max(proposedY, minY), maxY) - defaultY
-                                                )
-                                            }
-                                            .onEnded { _ in
-                                                isDraggingProcessingStatus = false
-                                                processingStatusDragStart = processingStatusOffset
-                                            }
-                                    )
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.18))
+                                    .frame(width: 38, height: 4)
+                                    .padding(.top, 6)
+                                    .allowsHitTesting(false)
                             }
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 8)
+                                    .onChanged { value in
+                                        // The progress rail has its own playful scrub gesture.
+                                        // Keep that gesture exclusive while all other parts
+                                        // of the panel can move the complete floating window.
+                                        guard !(48...84).contains(value.startLocation.y) else { return }
+                                        if !isDraggingProcessingStatus {
+                                            processingStatusDragStart = processingStatusOffset
+                                            isDraggingProcessingStatus = true
+                                        }
+                                        let minX = cardWidth / 2 + 12
+                                        let maxX = floatingGeometry.size.width - cardWidth / 2 - 12
+                                        let minY = cardHeight / 2 + 12
+                                        let maxY = floatingGeometry.size.height - cardHeight / 2 - 12
+                                        let proposedX = floatingGeometry.size.width / 2
+                                            + processingStatusDragStart.width + value.translation.width
+                                        let proposedY = defaultY
+                                            + processingStatusDragStart.height + value.translation.height
+                                        processingStatusOffset = CGSize(
+                                            width: min(max(proposedX, minX), maxX) - floatingGeometry.size.width / 2,
+                                            height: min(max(proposedY, minY), maxY) - defaultY
+                                        )
+                                    }
+                                    .onEnded { value in
+                                        if !(48...84).contains(value.startLocation.y) {
+                                            isDraggingProcessingStatus = false
+                                            processingStatusDragStart = processingStatusOffset
+                                        }
+                                    }
+                            )
                             .shadow(color: Color.blue.opacity(0.13), radius: 20, y: 8)
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -569,7 +572,7 @@ struct ContentView: View {
                         Image(systemName: isProcessing ? "sparkles" : "sparkles.rectangle.stack")
                             .font(.system(size: 16, weight: .semibold))
                             .symbolEffect(.pulse, options: .repeating, isActive: isProcessing)
-                        Text(isProcessing ? processingStage : (dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分增强"))
+                        Text(isProcessing ? "AI 正在运行" : (dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分增强"))
                             .font(.system(size: 13, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
@@ -854,7 +857,7 @@ struct ContentView: View {
                         ]
                         let timedIndex = Int(timeline.date.timeIntervalSince1970 / 4) % tips.count
                         Text(processingProgress >= 1 ? "高清照片已经准备好了" : tips[waitingTipIndex == 0 ? timedIndex : (waitingTipIndex % tips.count)])
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
                             .contentTransition(.opacity)
                             .animation(.easeInOut(duration: 0.35), value: waitingTipIndex)
@@ -944,7 +947,7 @@ struct ContentView: View {
                         }
                     } label: {
                         Label(["换句鼓励", "你很有耐心 ✨", "细节正在恢复 🪄", "快完成了吗？"][encouragementIndex], systemImage: "sparkles")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                             .padding(.horizontal, 9)
@@ -1117,11 +1120,14 @@ struct ContentView: View {
                     processingTask = nil
                     livePreviewImage = nil
                     processingProgress = 0
+                    if Task.isCancelled || error is CancellationError {
+                        processingStage = "已停止处理"
+                        return
+                    }
                     message = error.localizedDescription
                     showMessage = true
                 }
-            }
-        }
+            }        }
     }
 
     private func saveEnhanced() {
