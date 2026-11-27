@@ -29,6 +29,9 @@ struct ContentView: View {
     @State private var previewDragMode = 0 // 1: divider, 2: pan image, 3: compare
     @State private var previewDragStartPosition: CGFloat = 0.5
     @State private var hasAppeared = false
+    @State private var waitingTipIndex = 0
+    @State private var waitingFactExpanded = false
+    @State private var encouragementIndex = 0
 
 
     var body: some View {
@@ -786,12 +789,12 @@ struct ContentView: View {
                             "给模型一点时间，精细活不能急 🪄",
                             "照片不会上传 · 所有魔法都在手机里"
                         ]
-                        let index = Int(timeline.date.timeIntervalSince1970 / 4) % tips.count
-                        Text(processingProgress >= 1 ? "高清照片已经准备好了" : tips[index])
+                        let timedIndex = Int(timeline.date.timeIntervalSince1970 / 4) % tips.count
+                        Text(processingProgress >= 1 ? "高清照片已经准备好了" : tips[waitingTipIndex == 0 ? timedIndex : (waitingTipIndex % tips.count)])
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
                             .contentTransition(.opacity)
-                            .animation(.easeInOut(duration: 0.35), value: index)
+                            .animation(.easeInOut(duration: 0.35), value: waitingTipIndex)
                     }
                 }
 
@@ -816,6 +819,50 @@ struct ContentView: View {
                 }
             }
             .frame(height: 5)
+
+            if processingProgress < 1 {
+                HStack(spacing: 6) {
+                    Button {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                            waitingTipIndex = (waitingTipIndex + 1) % 5
+                            encouragementIndex = (encouragementIndex + 1) % 4
+                        }
+                    } label: {
+                        Label(["换句鼓励", "你很有耐心 ✨", "细节正在恢复 🪄", "快完成了吗？"][encouragementIndex], systemImage: "sparkles")
+                            .font(.system(size: 9, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.07), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            waitingFactExpanded.toggle()
+                        }
+                    } label: {
+                        Label(waitingFactExpanded ? "收起小知识" : "照片小知识", systemImage: waitingFactExpanded ? "chevron.up" : "lightbulb")
+                            .font(.system(size: 9, weight: .semibold))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(Color.orange.opacity(0.09), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Color(red: 0.25, green: 0.48, blue: 0.75))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+
+                if waitingFactExpanded {
+                    Text("AI 增强不是简单放大：它会根据周围像素推测纹理，但无法保证找回原本丢失的真实细节。")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color(red: 0.46, green: 0.54, blue: 0.65))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
