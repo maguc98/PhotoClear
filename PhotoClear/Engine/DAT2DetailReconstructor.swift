@@ -54,7 +54,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         guard let modelURL =
             Bundle.main.url(forResource: modelName, withExtension: "mlmodelc", subdirectory: "Models")
             ?? Bundle.main.url(forResource: modelName, withExtension: "mlmodelc") else {
-            throw RealESRGANError.modelMissing
+            throw RealESRGANError.detailModelMissing
         }
 
         let configuration = MLModelConfiguration()
