@@ -71,9 +71,9 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         }
 
         // Asynchronous Core ML loading prevents synchronous model initialization
-        // from blocking the processing task. Prefer CPU + Neural Engine on A14.
+        // from blocking the processing task. Use CPU-only initially to avoid a device-side ANE model compilation stall; profile before enabling ANE.
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuAndNeuralEngine
+        configuration.computeUnits = .cpuOnly
 
         do {
             let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
