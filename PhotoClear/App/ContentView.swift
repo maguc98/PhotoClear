@@ -768,6 +768,7 @@ struct ContentView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
                         .symbolEffect(.pulse, options: .repeating, isActive: processingProgress < 1)
+                        .symbolEffect(.bounce, value: processingProgress >= 1)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -777,9 +778,21 @@ struct ContentView: View {
                         .foregroundStyle(Color(red: 0.13, green: 0.19, blue: 0.29))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text(processingProgress >= 1 ? "高清照片已经准备好了" : "正在本地运行 · 请稍候")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
+                    TimelineView(.periodic(from: .now, by: 4)) { timeline in
+                        let tips = [
+                            "正在本地运行 · 请稍候",
+                            "AI 正在寻找照片里藏起来的细节 ✨",
+                            "布料、发丝和纹理正在努力恢复",
+                            "给模型一点时间，精细活不能急 🪄",
+                            "照片不会上传 · 所有魔法都在手机里"
+                        ]
+                        let index = Int(timeline.date.timeIntervalSince1970 / 4) % tips.count
+                        Text(processingProgress >= 1 ? "高清照片已经准备好了" : tips[index])
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
+                            .contentTransition(.opacity)
+                            .animation(.easeInOut(duration: 0.35), value: index)
+                    }
                 }
 
                 Spacer(minLength: 4)
