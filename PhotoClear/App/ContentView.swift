@@ -256,26 +256,32 @@ struct ContentView: View {
             GeometryReader { proxy in
                 ZStack {
                     RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.97))
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(8)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .scaleEffect(previewZoom)
-                        .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
-
-                    if let enhancedImage {
-                        Image(uiImage: enhancedImage)
+                    // Keep both image layers in one identical viewport. The comparison
+                    // mask and divider stay in viewport coordinates while the photo
+                    // content zooms/pans, preventing scale-dependent seam drift.
+                    ZStack {
+                        Image(uiImage: image)
                             .resizable()
                             .scaledToFit()
                             .padding(8)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .scaleEffect(previewZoom)
-                            .offset(x: previewOffset.width + previewDragOffset.width, y: previewOffset.height + previewDragOffset.height)
-                            .mask(alignment: .trailing) {
-                                Rectangle().frame(width: max(0, proxy.size.width * (1 - comparisonPosition)))
-                            }
+
+                        if let enhancedImage {
+                            Image(uiImage: enhancedImage)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(8)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .mask(alignment: .trailing) {
+                                    Rectangle()
+                                        .frame(width: max(0, proxy.size.width * (1 - comparisonPosition)))
+                                }
+                        }
                     }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .scaleEffect(previewZoom)
+                    .offset(x: previewOffset.width + previewDragOffset.width,
+                            y: previewOffset.height + previewDragOffset.height)
 
                     if enhancedImage != nil {
                         ZStack {
