@@ -260,8 +260,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 completedTiles += 1
                 // Publish a snapshot of the assembled output after each tile so users
                 // can inspect partial reconstruction and stop if artifacts appear.
-                if completedTiles == 1 || completedTiles % 1 == 0,
-                   let snapshot = stageContext.makeImage() {
+                stageContext.flush()
+                if let snapshot = stageContext.makeImage() {
                     livePreview(UIImage(cgImage: snapshot))
                 }
                 let fraction = Double(completedTiles) / Double(totalTiles)
