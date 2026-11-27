@@ -13,6 +13,9 @@ struct ContentView: View {
     @State private var aiScale = 2
     @State private var enhancementMode: EnhancementMode = .natural
     @AppStorage("photoclear.stackedUpscalingEnabled") private var stackedUpscalingEnabled = true
+    @AppStorage("photoclear.dat2DetailEngineEnabled") private var dat2DetailEngineEnabled = false
+    @AppStorage("photoclear.dat2.computeMode") private var dat2ComputeModeRaw = DAT2ComputeMode.cpu.rawValue
+    @AppStorage("photoclear.dat2.memoryBudgetGB") private var dat2MemoryBudgetGB = 1.8
     @AppStorage("photoclear.custom.detail") private var customDetail: Double = 0.52
     @AppStorage("photoclear.custom.sharpen") private var customSharpen: Double = 0.18
     @AppStorage("photoclear.custom.denoise") private var customDenoise: Double = 0.18
@@ -28,6 +31,19 @@ struct ContentView: View {
     @State private var previewDragMode = 0 // 1: divider, 2: pan image, 3: compare
     @State private var previewDragStartPosition: CGFloat = 0.5
     @State private var hasAppeared = false
+    @State private var processingTask: Task<Void, Never>?
+    @State private var livePreviewImage: UIImage?
+    @State private var livePreviewTileRect: CGRect?
+    @State private var livePreviewTileIndex = 0
+    @State private var livePreviewTileCount = 0
+    private var selectedDAT2ComputeMode: DAT2ComputeMode {
+        let stored = DAT2ComputeMode(rawValue: dat2ComputeModeRaw) ?? .cpu
+        // GPU inference is temporarily disabled after reproducible device crashes.
+        return stored == .gpu ? .cpu : stored
+    }
+
+    @State private var floatingProgressPosition: CGPoint?
+    @State private var floatingProgressDragStart: CGPoint?
 
 
     var body: some View {
@@ -59,19 +75,34 @@ struct ContentView: View {
                     .offset(x: -170, y: 320)
                     .allowsHitTesting(false)
 
-                VStack(spacing: compact ? 8 : 12) {
+                VStack(spacing: compact ? 12 : 14) {
                     header
                         .opacity(hasAppeared ? 1 : 0)
                         .offset(y: hasAppeared ? 0 : 10)
 
                     if let originalImage {
                         imageComparison(originalImage)
-                            .frame(minHeight: 0, maxHeight: .infinity)
+                            // The spacer below keeps the controls anchored at the bottom
+                            // while preserving a dedicated, non-overlapping photo viewport.
+                            .frame(
+                                width: max(0, geometry.size.width - (compact ? 32 : 40)),
+                                height: geometry.size.height * (compact
+                                    ? (enhancementMode == .custom ? 0.28 : 0.38)
+                                    : (enhancementMode == .custom ? 0.35 : 0.43))
+                            )
+                            .clipped()
+                            .layoutPriority(0)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
+                        Spacer(minLength: compact ? 6 : 10)
+                            .frame(maxHeight: compact ? 20 : 26)
+                            .layoutPriority(-1)
+
                         compactControls(compact: compact)
+                            .frame(width: max(0, geometry.size.width - (compact ? 32 : 40)))
+                            .layoutPriority(1)
                             .opacity(hasAppeared ? 1 : 0)
                             .offset(y: hasAppeared ? 0 : 14)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -84,13 +115,26 @@ struct ContentView: View {
                     privacyNote
                         .opacity(hasAppeared ? 1 : 0)
                 }
-                .padding(.horizontal, compact ? 13 : 18)
+                .padding(.horizontal, compact ? 16 : 20)
                 .padding(.top, compact ? 5 : 12)
                 .padding(.bottom, compact ? 5 : 10)
+            }
+            .overlay(alignment: .topLeading) {
+                if isProcessing {
+                    floatingProcessingWindow(in: geometry.size)
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.82, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.92).combined(with: .opacity)
+                        ))
+                        .zIndex(100)
+                }
             }
             .onAppear {
                 withAnimation(.spring(response: 0.62, dampingFraction: 0.82).delay(0.06)) {
                     hasAppeared = true
+                }
+                if floatingProgressPosition == nil {
+                    floatingProgressPosition = CGPoint(x: geometry.size.width / 2, y: 150)
                 }
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: originalImage != nil)
@@ -103,6 +147,13 @@ struct ContentView: View {
             .sensoryFeedback(.selection, trigger: stackedUpscalingEnabled)
             .onChange(of: stackedUpscalingEnabled) { _, enabled in
                 if !enabled && aiScale > 4 {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        aiScale = 4
+                    }
+                }
+            }
+            .onChange(of: dat2DetailEngineEnabled) { _, enabled in
+                if enabled && aiScale > 4 {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
                         aiScale = 4
                     }
@@ -254,103 +305,150 @@ struct ContentView: View {
     private func imageComparison(_ image: UIImage) -> some View {
         VStack(spacing: 7) {
             GeometryReader { proxy in
+                let photoWidth = max(proxy.size.width - 10, 1)
+                let photoHeight = max(proxy.size.height - 10, 1)
+                let photoSize = CGSize(width: photoWidth, height: photoHeight)
+
                 ZStack {
-                    RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.97))
-                    // Shared viewport and screen-space comparison seam.
-                    // Zoom/pan the photo layers first, then apply the reveal mask
-                    // in viewport coordinates so the seam cannot drift with zoom.
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .fill(.white.opacity(0.97))
+
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .padding(8)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .scaledToFill()
+                        .frame(width: photoWidth, height: photoHeight)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .scaleEffect(previewZoom)
                         .offset(x: previewOffset.width + previewDragOffset.width,
                                 y: previewOffset.height + previewDragOffset.height)
 
-                    if let enhancedImage {
+                    if isProcessing, let livePreviewImage {
+                        // DAT2 publishes the actual assembled output after each tile.
+                        // Untouched regions retain the source baseline; completed tiles
+                        // visibly replace those regions with reconstructed detail.
+                        Image(uiImage: livePreviewImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: photoWidth, height: photoHeight)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .overlay {
+                                liveTileMarker(in: photoSize)
+                            }
+                            .scaleEffect(previewZoom)
+                            .offset(x: previewOffset.width + previewDragOffset.width,
+                                    y: previewOffset.height + previewDragOffset.height)
+                            .transition(.opacity)
+                    } else if !isProcessing, let enhancedImage {
                         Image(uiImage: enhancedImage)
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .padding(8)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .scaledToFill()
+                            .frame(width: photoWidth, height: photoHeight)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                             .scaleEffect(previewZoom)
                             .offset(x: previewOffset.width + previewDragOffset.width,
                                     y: previewOffset.height + previewDragOffset.height)
                             .mask(alignment: .trailing) {
                                 Rectangle()
-                                    .frame(width: max(0, proxy.size.width * (1 - comparisonPosition)))
+                                    .frame(width: max(0, photoWidth * (1 - comparisonPosition)))
                             }
                     }
 
-                    if enhancedImage != nil {
+                    if !isProcessing, enhancedImage != nil {
                         ZStack {
                             Rectangle()
                                 .fill(.white)
                                 .frame(width: 2)
-                                .overlay(LinearGradient(colors: [.white, Color(red: 0.34, green: 0.72, blue: 1)], startPoint: .top, endPoint: .bottom))
+                                .overlay(
+                                    LinearGradient(
+                                        colors: [.white, Color(red: 0.34, green: 0.72, blue: 1)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
                             Circle()
                                 .fill(.white.opacity(0.97))
                                 .frame(width: 40, height: 40)
                                 .overlay(Circle().stroke(Color.blue.opacity(0.14), lineWidth: 1))
-                                .overlay(Image(systemName: "arrow.left.and.right")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.blue))
+                                .overlay(
+                                    Image(systemName: "arrow.left.and.right")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.blue)
+                                )
                                 .shadow(color: Color.blue.opacity(0.18), radius: 10, y: 3)
                         }
-                        .position(x: proxy.size.width * comparisonPosition, y: proxy.size.height / 2)
+                        .position(
+                            x: 5 + photoWidth * comparisonPosition,
+                            y: 5 + photoHeight / 2
+                        )
                     }
 
                     VStack {
-                        HStack {
-                            badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
-                            Spacer()
-                            if previewZoom > 1.01 {
-                                Button {
-                                    withAnimation(.spring(duration: 0.25)) {
-                                        previewZoom = 1
-                                        previewBaseZoom = 1
-                                        previewOffset = .zero
-                                        previewDragOffset = .zero
+                        if isProcessing {
+                            EmptyView()
+                        } else {
+                            HStack {
+                                badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
+                                Spacer()
+                                if previewZoom > 1.01 {
+                                    Button {
+                                        withAnimation(.spring(duration: 0.25)) {
+                                            previewZoom = 1
+                                            previewBaseZoom = 1
+                                            previewOffset = .zero
+                                            previewDragOffset = .zero
+                                        }
+                                    } label: {
+                                        Image(systemName: "arrow.counterclockwise")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 36, height: 36)
+                                            .background(.black.opacity(0.45), in: Circle())
                                     }
-                                } label: {
-                                    Image(systemName: "arrow.counterclockwise")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 36, height: 36)
-                                        .background(.black.opacity(0.45), in: Circle())
+                                    .accessibilityLabel("恢复原比例")
                                 }
-                                .accessibilityLabel("恢复原比例")
                             }
                         }
+
                         Spacer()
+
                         HStack {
-                            badge("原图")
+                            badge(isProcessing ? "原图底图" : "原图")
                             Spacer()
-                            badge(enhancedImage == nil ? "待增强" : (previewZoom > 1.01 ? "增强图 · 放大查看" : "增强图 · 拖动对比"))
+                            if isProcessing {
+                                badge(livePreviewTileCount == 0
+                                      ? "等待第一块重构"
+                                      : "已完成 \(livePreviewTileIndex)/\(livePreviewTileCount) 块")
+                            } else {
+                                badge(enhancedImage == nil
+                                      ? "待增强"
+                                      : (previewZoom > 1.01 ? "增强图 · 放大查看" : "增强图 · 拖动对比"))
+                            }
                         }
                     }
                     .padding(12)
-
-                    if isProcessing || processingProgress >= 1 {
-                        processingStatus
-                            .padding(.horizontal, 14)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            .transition(.opacity.combined(with: .scale))
-                    }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.98), lineWidth: 1.2))
-                .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.09), radius: 16, y: 7)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.98), lineWidth: 1.2)
+                )
+                .shadow(
+                    color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.09),
+                    radius: 16,
+                    y: 7
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 .highPriorityGesture(
                     MagnificationGesture()
                         .onChanged { value in
+                            guard !isProcessing else { return }
                             previewZoom = min(max(previewBaseZoom * value, 1), 5)
                         }
                         .onEnded { _ in
+                            guard !isProcessing else { return }
                             previewBaseZoom = previewZoom
                             if previewZoom <= 1.01 {
                                 previewZoom = 1
@@ -363,24 +461,34 @@ struct ContentView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 6)
                         .onChanged { value in
+                            guard !isProcessing else { return }
                             if previewDragMode == 0 {
-                                let dividerX = proxy.size.width * comparisonPosition
+                                let dividerX = 5 + photoWidth * comparisonPosition
                                 let touchNearDivider = abs(value.startLocation.x - dividerX) <= 38
                                 previewDragStartPosition = comparisonPosition
                                 if enhancedImage != nil && touchNearDivider {
                                     previewDragMode = 1
-                                } else if previewZoom > 1.01 {
+                                } else {
+                                    // Allow repositioning the crop even at the default zoom.
+                                    // Compare divider dragging still takes priority when touched.
                                     previewDragMode = 2
-                                } else if enhancedImage != nil {
-                                    previewDragMode = 3
                                 }
                             }
                             switch previewDragMode {
                             case 1, 3:
-                                comparisonPosition = min(max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
+                                comparisonPosition = min(
+                                    max(previewDragStartPosition + value.translation.width / max(photoWidth, 1), 0),
+                                    1
+                                )
                             case 2:
-                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
-                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                let fillScale = max(
+                                    photoWidth / max(image.size.width, 1),
+                                    photoHeight / max(image.size.height, 1)
+                                ) * previewZoom
+                                let renderedWidth = image.size.width * fillScale
+                                let renderedHeight = image.size.height * fillScale
+                                let maxX = max(0, (renderedWidth - photoWidth) / 2)
+                                let maxY = max(0, (renderedHeight - photoHeight) / 2)
                                 previewDragOffset = CGSize(
                                     width: min(max(previewOffset.width + value.translation.width, -maxX), maxX) - previewOffset.width,
                                     height: min(max(previewOffset.height + value.translation.height, -maxY), maxY) - previewOffset.height
@@ -390,9 +498,20 @@ struct ContentView: View {
                             }
                         }
                         .onEnded { value in
+                            guard !isProcessing else {
+                                previewDragOffset = .zero
+                                previewDragMode = 0
+                                return
+                            }
                             if previewDragMode == 2 {
-                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
-                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                let fillScale = max(
+                                    photoWidth / max(image.size.width, 1),
+                                    photoHeight / max(image.size.height, 1)
+                                ) * previewZoom
+                                let renderedWidth = image.size.width * fillScale
+                                let renderedHeight = image.size.height * fillScale
+                                let maxX = max(0, (renderedWidth - photoWidth) / 2)
+                                let maxY = max(0, (renderedHeight - photoHeight) / 2)
                                 previewOffset = CGSize(
                                     width: min(max(previewOffset.width + value.translation.width, -maxX), maxX),
                                     height: min(max(previewOffset.height + value.translation.height, -maxY), maxY)
@@ -403,6 +522,152 @@ struct ContentView: View {
                         }
                 )
             }
+        }
+    }
+
+    private func floatingProcessingWindow(in screen: CGSize) -> some View {
+        let windowWidth = min(screen.width - 36, 340)
+        let defaultPosition = CGPoint(x: screen.width / 2, y: 150)
+        let position = floatingProgressPosition ?? defaultPosition
+
+        return VStack(spacing: 9) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Color.blue.opacity(0.10)).frame(width: 38, height: 38)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.blue)
+                        .symbolEffect(.pulse, options: .repeating)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI 正在重构照片")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.12, green: 0.20, blue: 0.33))
+                    Text(livePreviewTileCount > 0 ? "正在处理细节 · \(livePreviewTileIndex)/\(livePreviewTileCount) 块" : processingStage)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color(red: 0.46, green: 0.55, blue: 0.67))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 2)
+                Text("\(Int(processingProgress * 100))%")
+                    .font(.system(size: 16, weight: .heavy, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Color.blue)
+                    .contentTransition(.numericText())
+                Button {
+                    processingTask?.cancel()
+                    processingTask = nil
+                    isProcessing = false
+                    livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
+                    enhancedImage = nil
+                    processingProgress = 0
+                    processingStage = "已停止处理"
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.red)
+                        .frame(width: 30, height: 30)
+                        .background(Color.red.opacity(0.10), in: Circle())
+                }
+                .accessibilityLabel("停止 AI 处理")
+            }
+
+            GeometryReader { bar in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.blue.opacity(0.10))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color.cyan, Color.blue, Color(red: 0.38, green: 0.55, blue: 0.98)], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(4, bar.size.width * processingProgress))
+                    Capsule().fill(.white.opacity(0.65))
+                        .frame(width: 34)
+                        .offset(x: max(0, min(bar.size.width - 34, bar.size.width * processingProgress - 17)))
+                        .blur(radius: 2)
+                        .opacity(processingProgress < 1 ? 0.8 : 0)
+                }
+            }
+            .frame(height: 5)
+            .clipShape(Capsule())
+
+            HStack(spacing: 6) {
+                Image(systemName: "hand.draw").font(.system(size: 9, weight: .semibold))
+                Text("长按拖动 · 可放置在任意位置").font(.system(size: 9, weight: .medium))
+                Spacer()
+                if livePreviewTileCount > 0 {
+                    Text("实时预览").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.blue)
+                }
+            }
+            .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.67))
+        }
+        .padding(12)
+        .frame(width: windowWidth)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white.opacity(0.97))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LinearGradient(colors: [Color.white, Color(red: 0.965, green: 0.979, blue: 0.995)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.white.opacity(0.92), lineWidth: 1)
+                }
+                .shadow(color: Color(red: 0.42, green: 0.57, blue: 0.78).opacity(0.13), radius: 16, y: 7)
+        }
+        .position(
+            x: min(max(position.x, windowWidth / 2 + 8), screen.width - windowWidth / 2 - 8),
+            y: min(max(position.y, 72), screen.height - 80)
+        )
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { value in
+                    if floatingProgressDragStart == nil { floatingProgressDragStart = position }
+                    guard let start = floatingProgressDragStart else { return }
+                    floatingProgressPosition = CGPoint(
+                        x: min(max(start.x + value.translation.width, windowWidth / 2 + 8), screen.width - windowWidth / 2 - 8),
+                        y: min(max(start.y + value.translation.height, 72), screen.height - 80)
+                    )
+                }
+                .onEnded { _ in floatingProgressDragStart = nil }
+        )
+        .animation(.spring(response: 0.36, dampingFraction: 0.76), value: processingProgress)
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: livePreviewTileIndex)
+    }
+
+    @ViewBuilder
+    private func liveTileMarker(in viewport: CGSize) -> some View {
+        if let tileRect = livePreviewTileRect, let preview = livePreviewImage {
+            let imageSize = preview.size
+            let scale = max(
+                viewport.width / max(imageSize.width, 1),
+                viewport.height / max(imageSize.height, 1)
+            )
+            let fittedWidth = imageSize.width * scale
+            let fittedHeight = imageSize.height * scale
+            let originX = (viewport.width - fittedWidth) / 2
+            let originY = (viewport.height - fittedHeight) / 2
+
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.blue.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(.white.opacity(0.95), lineWidth: 2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.blue.opacity(0.85), lineWidth: 1)
+                )
+                .frame(
+                    width: max(2, fittedWidth * tileRect.width),
+                    height: max(2, fittedHeight * tileRect.height)
+                )
+                .position(
+                    x: originX + fittedWidth * tileRect.midX,
+                    y: originY + fittedHeight * tileRect.midY
+                )
+                .animation(.easeInOut(duration: 0.16), value: tileRect)
+                .allowsHitTesting(false)
         }
     }
 
@@ -431,10 +696,10 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 超分辨率")
+                    Text(dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分辨率")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(red: 0.14, green: 0.19, blue: 0.28))
-                    Text("REAL-ESRGAN · 本地 AI 细节重建")
+                    Text(dat2DetailEngineEnabled ? "4×BHI DAT2 · 照片纹理修复" : "REAL-ESRGAN · 本地 AI 超分")
                         .font(.system(size: 9, weight: .medium))
                         .tracking(0.25)
                         .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
@@ -461,13 +726,13 @@ struct ContentView: View {
                                 }
                         }
                         .buttonStyle(PressScaleButtonStyle())
-                        .disabled(isProcessing || (scale > 4 && !stackedUpscalingEnabled))
-                        .opacity(scale > 4 && !stackedUpscalingEnabled ? 0.38 : 1)
+                        .disabled(isProcessing || (scale > 4 && (!stackedUpscalingEnabled || dat2DetailEngineEnabled)))
+                        .opacity(scale > 4 && (!stackedUpscalingEnabled || dat2DetailEngineEnabled) ? 0.38 : 1)
                     }
                 }
                 .padding(3)
                 .background(Color(red: 0.94, green: 0.96, blue: 0.985), in: Capsule())
-                .frame(width: compact ? 152 : 176)
+                .frame(width: compact ? 136 : 164)
                 .disabled(isProcessing)
             }
             .padding(.horizontal, 11)
@@ -477,7 +742,10 @@ struct ContentView: View {
 
             modeSelector
 
-            stackedAlgorithmControl(compact: compact)
+            if !dat2DetailEngineEnabled {
+                stackedAlgorithmControl(compact: compact)
+            }
+            detailEngineControl(compact: compact)
 
             if enhancementMode == .custom {
                 customAdjustmentPanel(compact: compact)
@@ -490,7 +758,7 @@ struct ContentView: View {
                         Image(systemName: isProcessing ? "sparkles" : "sparkles.rectangle.stack")
                             .font(.system(size: 16, weight: .semibold))
                             .symbolEffect(.pulse, options: .repeating, isActive: isProcessing)
-                        Text(isProcessing ? "AI 正在重建细节…" : "AI 超分增强")
+                        Text(isProcessing ? "AI 正在运行" : (dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分增强"))
                             .font(.system(size: 13, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
@@ -594,6 +862,92 @@ struct ContentView: View {
             }
             .padding(.horizontal, 1)
         }
+        .clipped()
+    }
+
+    private func detailEngineControl(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            aiProcessingOption(
+                title: dat2DetailEngineEnabled ? "DAT2 细节重构已启用" : "启用 AI 细节重构",
+                symbol: "text.magnifyingglass",
+                isEnabled: $dat2DetailEngineEnabled,
+                compact: compact
+            )
+            Text(dat2DetailEngineEnabled
+                 ? "针对真实照片纹理、轻微模糊和压缩痕迹优化；可改善布料、头发等细节，但不保证还原原图已丢失的信息。"
+                 : "开启后使用内嵌 DAT2 模型重建照片纹理；关闭时继续使用现有 Real-ESRGAN。")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color(red: 0.53, green: 0.60, blue: 0.69))
+                .fixedSize(horizontal: false, vertical: true)
+            if dat2DetailEngineEnabled {
+                HStack(spacing: 6) {
+                    Text("推理设备")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.66))
+                    Spacer(minLength: 3)
+                    ForEach(DAT2ComputeMode.allCases) { mode in
+                        Button {
+                            guard !isProcessing else { return }
+                            withAnimation(.spring(response: 0.26, dampingFraction: 0.76)) {
+                                dat2ComputeModeRaw = mode.rawValue
+                            }
+                        } label: {
+                            Text(mode.title)
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundStyle(selectedDAT2ComputeMode == mode
+                                    ? .white
+                                    : Color(red: 0.38, green: 0.48, blue: 0.61))
+                                .frame(width: 48, height: 27)
+                                .background {
+                                    Capsule()
+                                        .fill(selectedDAT2ComputeMode == mode
+                                            ? LinearGradient(colors: [Color(red: 0.20, green: 0.61, blue: 0.98), Color(red: 0.25, green: 0.43, blue: 0.92)], startPoint: .leading, endPoint: .trailing)
+                                            : LinearGradient(colors: [.white, Color(red: 0.95, green: 0.97, blue: 0.99)], startPoint: .top, endPoint: .bottom))
+                                }
+                                .overlay(Capsule().stroke(selectedDAT2ComputeMode == mode ? Color.white.opacity(0.4) : Color.blue.opacity(0.08), lineWidth: 1))
+                        }
+                        .buttonStyle(PressScaleButtonStyle())
+                        .disabled(isProcessing || mode == .gpu)
+                        .accessibilityLabel(mode == .gpu ? "GPU 暂不可用，已临时禁用" : "\(mode.title) · \(mode.subtitle)")
+                    }
+                }
+                .padding(.top, 4)
+                Text("GPU 目前因闪退风险暂时关闭；CPU / ANE 可选。")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.56, green: 0.62, blue: 0.70))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("内存预算")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.66))
+                        Spacer()
+                        Text("\(dat2MemoryBudgetGB, specifier: "%.1f") GB")
+                            .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(Color.blue)
+                    }
+                    Slider(value: $dat2MemoryBudgetGB, in: 0.8...2.3, step: 0.1)
+                        .tint(Color(red: 0.24, green: 0.58, blue: 0.94))
+                        .frame(height: 22)
+                        .disabled(isProcessing)
+                    HStack {
+                        Text("0.8 GB · 更稳妥")
+                        Spacer()
+                        Text("最高 2.3 GB")
+                    }
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.57, green: 0.63, blue: 0.71))
+                }
+                .padding(.top, 3)
+                Text("预算仅限制图像工作区；iOS 仍需额外内存，系统压力大时可能终止 App。")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color(red: 0.58, green: 0.62, blue: 0.69))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white, lineWidth: 1))
     }
 
     private func stackedAlgorithmControl(compact: Bool) -> some View {
@@ -723,73 +1077,6 @@ struct ContentView: View {
         .disabled(isProcessing)
     }
 
-    private var processingStatus: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(processingProgress >= 1 ? Color.green.opacity(0.12) : Color.blue.opacity(0.11))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: processingProgress >= 1 ? "checkmark" : "sparkles")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
-                        .symbolEffect(.pulse, options: .repeating, isActive: processingProgress < 1)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(processingProgress >= 1 ? "处理完成" : processingStage)
-                        .contentTransition(.opacity)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color(red: 0.13, green: 0.19, blue: 0.29))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Text(processingProgress >= 1 ? "高清照片已经准备好了" : "正在本地运行 · 请稍候")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
-                }
-
-                Spacer(minLength: 4)
-
-                Text("\(Int(processingProgress * 100))%")
-                    .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
-                    .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
-                    .contentTransition(.numericText())
-            }
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color(red: 0.89, green: 0.93, blue: 0.98))
-                    Capsule()
-                        .fill(LinearGradient(colors: processingProgress >= 1
-                                             ? [Color(red: 0.24, green: 0.76, blue: 0.48), Color(red: 0.36, green: 0.84, blue: 0.62)]
-                                             : [Color(red: 0.18, green: 0.64, blue: 1.0), Color(red: 0.34, green: 0.48, blue: 0.98)],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(7, geometry.size.width * processingProgress))
-                        .shadow(color: (processingProgress >= 1 ? Color.green : Color.blue).opacity(0.24), radius: 5, y: 1)
-                }
-            }
-            .frame(height: 5)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.78))
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-        }
-        .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.10), radius: 15, y: 6)
-        .frame(maxWidth: 300)
-        .animation(.spring(response: 0.38, dampingFraction: 0.84), value: processingProgress >= 1)
-        .allowsHitTesting(false)
-    }
-
     private func beginProgress() {
         processingProgress = 0.02
         processingStage = "正在加载 AI 模型…"
@@ -841,6 +1128,10 @@ struct ContentView: View {
             }
             originalImage = image
             enhancedImage = nil
+            livePreviewImage = nil
+            livePreviewTileRect = nil
+            livePreviewTileIndex = 0
+            livePreviewTileCount = 0
             comparisonPosition = 0.5
             previewZoom = 1
             previewBaseZoom = 1
@@ -855,22 +1146,58 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
+        livePreviewImage = nil
+        livePreviewTileRect = nil
+        livePreviewTileIndex = 0
+        livePreviewTileCount = 0
+        enhancedImage = nil
         beginProgress()
-        Task {
+        processingTask = Task {
             do {
-                let result = try await RealESRGANUpscaler.shared.upscale(
-                    originalImage,
-                    outputScale: aiScale,
-                    settings: enhancementSettings,
-                    stackedUpscalingEnabled: stackedUpscalingEnabled
-                ) { progress, stage in
-                    Task { @MainActor in
-                        processingProgress = min(max(progress, 0.02), 0.99)
-                        processingStage = stage
+                let result: RealESRGANResult
+                if dat2DetailEngineEnabled {
+                    result = try await DAT2DetailReconstructor.shared.upscale(
+                        originalImage,
+                        outputScale: aiScale,
+                        settings: enhancementSettings,
+                        computeMode: selectedDAT2ComputeMode,
+                        memoryBudgetGB: dat2MemoryBudgetGB
+                    ) { progress, stage in
+                        Task { @MainActor in
+                            guard isProcessing else { return }
+                            processingProgress = min(max(progress, 0.02), 0.99)
+                            processingStage = stage
+                        }
+                    } livePreview: { preview, tileRect, tileIndex, tileCount in
+                        Task { @MainActor in
+                            guard isProcessing else { return }
+                            livePreviewImage = preview
+                            livePreviewTileRect = tileRect
+                            livePreviewTileIndex = tileIndex
+                            livePreviewTileCount = tileCount
+                        }
+                    }
+                } else {
+                    result = try await RealESRGANUpscaler.shared.upscale(
+                        originalImage,
+                        outputScale: aiScale,
+                        settings: enhancementSettings,
+                        stackedUpscalingEnabled: stackedUpscalingEnabled
+                    ) { progress, stage in
+                        Task { @MainActor in
+                            guard isProcessing else { return }
+                            processingProgress = min(max(progress, 0.02), 0.99)
+                            processingStage = stage
+                        }
                     }
                 }
                 await MainActor.run {
                     enhancedImage = result.image
+                    livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
+                    processingTask = nil
                     comparisonPosition = 0.5
                     isProcessing = false
                     completeProgress()
@@ -882,7 +1209,16 @@ struct ContentView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
+                    processingTask = nil
+                    livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
                     processingProgress = 0
+                    if Task.isCancelled || error is CancellationError {
+                        processingStage = "已停止处理"
+                        return
+                    }
                     message = error.localizedDescription
                     showMessage = true
                 }

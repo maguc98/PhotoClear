@@ -7,6 +7,8 @@ concurrency:
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -52,6 +54,28 @@ jobs:
             -derivedDataPath build/DeviceDerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Embed precompiled DAT2 detail model
+        run: |
+          APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
+          MODEL_SOURCE="PhotoClear/Models/DAT2_Detail.mlmodelc"
+          test -d "$APP_PATH"
+          test -d "$MODEL_SOURCE"
+          mkdir -p "$APP_PATH/Models"
+          ditto "$MODEL_SOURCE" "$APP_PATH/Models/DAT2_Detail.mlmodelc"
+          test -d "$APP_PATH/Models/DAT2_Detail.mlmodelc"
+
+      - name: Verify embedded DAT2 model
+        run: |
+          APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
+          MODEL_PATH="$APP_PATH/Models/DAT2_Detail.mlmodelc"
+          test -d "$MODEL_PATH"
+          printf 'Found embedded DAT2 model: %s\n' "$MODEL_PATH"
+
+      - name: Smoke-test DAT2 Core ML prediction
+        run: |
+          APP_PATH="build/DeviceDerivedData/Build/Products/Release-iphoneos/PhotoClear.app"
+          swift Scripts/verify-dat2-model.swift "$APP_PATH/Models/DAT2_Detail.mlmodelc"
 
       - name: Verify embedded Core ML model
         run: |

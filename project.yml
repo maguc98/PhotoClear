@@ -21,6 +21,7 @@ targets:
       - path: PhotoClear
         excludes:
           - Models/README.md
+          - Models/DAT2_Detail.mlmodelc
     settings:
       base:
         PRODUCT_NAME: PhotoClear

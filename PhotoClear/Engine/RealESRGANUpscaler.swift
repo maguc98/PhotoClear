@@ -17,6 +17,7 @@ struct RealESRGANResult {
 
 enum RealESRGANError: LocalizedError {
     case modelMissing
+    case detailModelMissing
     case invalidImage
     case invalidModel
     case unsupportedOutput
@@ -27,6 +28,8 @@ enum RealESRGANError: LocalizedError {
         switch self {
         case .modelMissing:
             return "没有找到随 App 安装的 Real-ESRGAN 模型。请从包含模型的 GitHub Actions 构建版本安装。"
+        case .detailModelMissing:
+            return "没有找到随 App 安装的 DAT2 细节重构模型。请安装包含内嵌模型的新版本。"
         case .invalidImage:
             return "无法读取这张照片。"
         case .invalidModel:
