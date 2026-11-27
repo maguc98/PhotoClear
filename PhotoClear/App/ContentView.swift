@@ -75,14 +75,14 @@ struct ContentView: View {
                             // The spacer below keeps the controls anchored at the bottom
                             // while preserving a dedicated, non-overlapping photo viewport.
                             .frame(height: compact
-                                   ? geometry.size.height * (enhancementMode == .custom ? 0.25 : 0.36)
-                                   : geometry.size.height * (enhancementMode == .custom ? 0.33 : 0.43))
+                                   ? geometry.size.height * (enhancementMode == .custom ? 0.22 : 0.29)
+                                   : geometry.size.height * (enhancementMode == .custom ? 0.29 : 0.35))
                             .layoutPriority(0)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
-                        Spacer(minLength: compact ? 12 : 20)
+                        Spacer(minLength: compact ? 3 : 6)
                             .layoutPriority(-1)
 
                         compactControls(compact: compact)
