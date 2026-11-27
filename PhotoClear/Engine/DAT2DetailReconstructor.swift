@@ -31,7 +31,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         _ image: UIImage,
         outputScale: Int,
         settings: EnhancementSettings,
-        progress: @escaping @Sendable (Double, String) -> Void
+        progress: @escaping @Sendable (Double, String) -> Void,
+        livePreview: @escaping @Sendable (UIImage) -> Void = { _ in }
     ) async throws -> RealESRGANResult {
         guard [2, 4, 8, 12].contains(outputScale) else {
             throw RealESRGANError.processingFailed("DAT2 细节重构仅支持 2×、4×、8× 和 12× 输出。")
@@ -42,7 +43,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 image,
                 outputScale: outputScale,
                 settings: settings,
-                progress: progress
+                progress: progress,
+                livePreview: livePreview
             )
         }.value
     }
@@ -87,7 +89,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         _ image: UIImage,
         outputScale: Int,
         settings: EnhancementSettings,
-        progress: @Sendable (Double, String) -> Void
+        progress: @Sendable (Double, String) -> Void,
+        livePreview: @escaping @Sendable (UIImage) -> Void
     ) async throws -> RealESRGANResult {
         progress(0.02, "正在初始化 DAT2 AI 模型…")
         let model = try await loadModel()
@@ -172,6 +175,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         progress(0.09, "正在准备照片分块…")
 
         for yIndex in yStarts.indices {
+            if Task.isCancelled { throw CancellationError() }
             let y0 = yStarts[yIndex]
             let validHeight = min(tileSize, height - y0)
             let topOverlap = yIndex > 0
@@ -184,6 +188,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             let cropBottom = bottomOverlap - bottomOverlap / 2
 
             for xIndex in xStarts.indices {
+                if Task.isCancelled { throw CancellationError() }
                 let x0 = xStarts[xIndex]
                 let validWidth = min(tileSize, width - x0)
                 let leftOverlap = xIndex > 0
@@ -255,6 +260,12 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 }
 
                 completedTiles += 1
+                // Publish a snapshot of the assembled output after each tile so users
+                // can inspect partial reconstruction and stop if artifacts appear.
+                if completedTiles == 1 || completedTiles % 1 == 0,
+                   let snapshot = stageContext.makeImage() {
+                    livePreview(UIImage(cgImage: snapshot))
+                }
                 let fraction = Double(completedTiles) / Double(totalTiles)
                 progress(
                     0.09 + fraction * 0.82,
