@@ -38,7 +38,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         }
 
         return try await Task.detached(priority: .userInitiated) {
-            try self.upscaleSynchronously(
+            try await self.upscaleSynchronously(
                 image,
                 outputScale: outputScale,
                 settings: settings,
@@ -47,11 +47,22 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         }.value
     }
 
-    private func loadModel() async throws -> MLModel {
+    private func cachedModelValue() -> MLModel? {
         modelLock.lock()
-        let existing = cachedModel
-        modelLock.unlock()
-        if let existing { return existing }
+        defer { modelLock.unlock() }
+        return cachedModel
+    }
+
+    private func storeModelValue(_ model: MLModel) -> MLModel {
+        modelLock.lock()
+        defer { modelLock.unlock() }
+        if let cachedModel { return cachedModel }
+        cachedModel = model
+        return model
+    }
+
+    private func loadModel() async throws -> MLModel {
+        if let existing = cachedModelValue() { return existing }
 
         guard let modelURL =
             Bundle.main.url(forResource: modelName, withExtension: "mlmodelc", subdirectory: "Models")
@@ -66,14 +77,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
 
         do {
             let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
-            modelLock.lock()
-            if let cachedModel {
-                modelLock.unlock()
-                return cachedModel
-            }
-            cachedModel = model
-            modelLock.unlock()
-            return model
+            return storeModelValue(model)
         } catch {
             throw RealESRGANError.processingFailed("DAT2 模型加载失败：\\(error.localizedDescription)")
         }
