@@ -38,15 +38,13 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             throw RealESRGANError.processingFailed("DAT2 细节重构仅支持 2×、4×、8× 和 12× 输出。")
         }
 
-        return try await Task(priority: .userInitiated) {
-            try await self.upscaleSynchronously(
-                image,
-                outputScale: outputScale,
-                settings: settings,
-                progress: progress,
-                livePreview: livePreview
-            )
-        }.value
+        return try await self.upscaleSynchronously(
+            image,
+            outputScale: outputScale,
+            settings: settings,
+            progress: progress,
+            livePreview: livePreview
+        )
     }
 
     private func cachedModelValue() -> MLModel? {
