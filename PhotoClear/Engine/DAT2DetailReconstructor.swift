@@ -3,6 +3,8 @@ import UIKit
 import CoreML
 import CoreImage
 import CoreVideo
+import CoreGraphics
+import ImageIO
 import Darwin
 
 /// Bundled 4xBHI DAT2 photo-restoration model.
