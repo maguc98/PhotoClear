@@ -37,7 +37,9 @@ struct ContentView: View {
     @State private var livePreviewTileIndex = 0
     @State private var livePreviewTileCount = 0
     private var selectedDAT2ComputeMode: DAT2ComputeMode {
-        DAT2ComputeMode(rawValue: dat2ComputeModeRaw) ?? .cpu
+        let stored = DAT2ComputeMode(rawValue: dat2ComputeModeRaw) ?? .cpu
+        // GPU inference is temporarily disabled after reproducible device crashes.
+        return stored == .gpu ? .cpu : stored
     }
 
     @State private var floatingProgressPosition: CGPoint?
@@ -905,17 +907,17 @@ struct ContentView: View {
                                 .overlay(Capsule().stroke(selectedDAT2ComputeMode == mode ? Color.white.opacity(0.4) : Color.blue.opacity(0.08), lineWidth: 1))
                         }
                         .buttonStyle(PressScaleButtonStyle())
-                        .disabled(isProcessing)
-                        .accessibilityLabel("\(mode.title) · \(mode.subtitle)")
+                        .disabled(isProcessing || mode == .gpu)
+                        .accessibilityLabel(mode == .gpu ? "GPU 暂不可用，已临时禁用" : "\(mode.title) · \(mode.subtitle)")
                     }
                 }
                 .padding(.top, 4)
-                Text("不同设备的速度和稳定性因机型、系统及模型算子支持而异。")
+                Text("GPU 目前因闪退风险暂时关闭；CPU / ANE 可选。")
                     .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(Color(red: 0.56, green: 0.62, blue: 0.70))
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text("DAT2 内存预算")
+                        Text("内存预算")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Color(red: 0.48, green: 0.56, blue: 0.66))
                         Spacer()
@@ -925,6 +927,7 @@ struct ContentView: View {
                     }
                     Slider(value: $dat2MemoryBudgetGB, in: 0.8...2.3, step: 0.1)
                         .tint(Color(red: 0.24, green: 0.58, blue: 0.94))
+                        .frame(height: 22)
                         .disabled(isProcessing)
                     HStack {
                         Text("0.8 GB · 更稳妥")
@@ -935,14 +938,14 @@ struct ContentView: View {
                     .foregroundStyle(Color(red: 0.57, green: 0.63, blue: 0.71))
                 }
                 .padding(.top, 3)
-                Text("这是 DAT2 图像工作区预算，不是 iOS 强制 RAM 上限；系统内存紧张时仍可能提前终止 App。")
+                Text("预算仅限制图像工作区；iOS 仍需额外内存，系统压力大时可能终止 App。")
                     .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(Color(red: 0.58, green: 0.62, blue: 0.69))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.vertical, 5)
         .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white, lineWidth: 1))
     }
