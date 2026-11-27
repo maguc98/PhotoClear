@@ -34,11 +34,9 @@ struct ContentView: View {
     @State private var encouragementIndex = 0
     @State private var processingTask: Task<Void, Never>?
     @State private var livePreviewImage: UIImage?
-    @State private var progressScrubValue: Double = 0
-    @State private var isProgressScrubbing = false
-    @State private var processingStatusOffset: CGSize = .zero
-    @State private var processingStatusDragStart: CGSize = .zero
-    @State private var isDraggingProcessingStatus = false
+    @State private var livePreviewTileRect: CGRect?
+    @State private var livePreviewTileIndex = 0
+    @State private var livePreviewTileCount = 0
 
 
     var body: some View {
@@ -80,12 +78,15 @@ struct ContentView: View {
                             // Reserve a predictable vertical zone for the preview so its
                             // bottom badges never collide with the controls card.
                             .frame(height: compact
-                                   ? geometry.size.height * (enhancementMode == .custom ? 0.22 : 0.32)
-                                   : geometry.size.height * (enhancementMode == .custom ? 0.30 : 0.40))
+                                   ? geometry.size.height * (enhancementMode == .custom ? 0.25 : 0.36)
+                                   : geometry.size.height * (enhancementMode == .custom ? 0.33 : 0.43))
                             .layoutPriority(0)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
+
+                        Spacer(minLength: compact ? 12 : 20)
+                            .layoutPriority(-1)
 
                         compactControls(compact: compact)
                             .layoutPriority(1)
@@ -104,67 +105,6 @@ struct ContentView: View {
                 .padding(.horizontal, compact ? 13 : 18)
                 .padding(.top, compact ? 5 : 12)
                 .padding(.bottom, compact ? 5 : 10)
-            }
-            .overlay {
-                if isProcessing || processingProgress >= 1 {
-                    GeometryReader { floatingGeometry in
-                        let cardWidth = min(300, floatingGeometry.size.width - 28)
-                        let cardHeight: CGFloat = waitingFactExpanded ? 190 : 150
-                        let defaultY = floatingGeometry.size.height * 0.28
-
-                        processingStatus
-                            .frame(width: cardWidth)
-                            .position(
-                                x: min(max(floatingGeometry.size.width / 2 + processingStatusOffset.width,
-                                           cardWidth / 2 + 12),
-                                       floatingGeometry.size.width - cardWidth / 2 - 12),
-                                y: min(max(defaultY + processingStatusOffset.height,
-                                           cardHeight / 2 + 12),
-                                       floatingGeometry.size.height - cardHeight / 2 - 12)
-                            )
-                            .overlay(alignment: .top) {
-                                Capsule()
-                                    .fill(Color.blue.opacity(0.18))
-                                    .frame(width: 38, height: 4)
-                                    .padding(.top, 6)
-                                    .allowsHitTesting(false)
-                            }
-                            .simultaneousGesture(
-                                DragGesture(minimumDistance: 8)
-                                    .onChanged { value in
-                                        // The progress rail has its own playful scrub gesture.
-                                        // Keep that gesture exclusive while all other parts
-                                        // of the panel can move the complete floating window.
-                                        guard !(48...84).contains(value.startLocation.y) else { return }
-                                        if !isDraggingProcessingStatus {
-                                            processingStatusDragStart = processingStatusOffset
-                                            isDraggingProcessingStatus = true
-                                        }
-                                        let minX = cardWidth / 2 + 12
-                                        let maxX = floatingGeometry.size.width - cardWidth / 2 - 12
-                                        let minY = cardHeight / 2 + 12
-                                        let maxY = floatingGeometry.size.height - cardHeight / 2 - 12
-                                        let proposedX = floatingGeometry.size.width / 2
-                                            + processingStatusDragStart.width + value.translation.width
-                                        let proposedY = defaultY
-                                            + processingStatusDragStart.height + value.translation.height
-                                        processingStatusOffset = CGSize(
-                                            width: min(max(proposedX, minX), maxX) - floatingGeometry.size.width / 2,
-                                            height: min(max(proposedY, minY), maxY) - defaultY
-                                        )
-                                    }
-                                    .onEnded { value in
-                                        if !(48...84).contains(value.startLocation.y) {
-                                            isDraggingProcessingStatus = false
-                                            processingStatusDragStart = processingStatusOffset
-                                        }
-                                    }
-                            )
-                            .shadow(color: Color.blue.opacity(0.13), radius: 20, y: 8)
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    .zIndex(20)
-                }
             }
             .onAppear {
                 withAnimation(.spring(response: 0.62, dampingFraction: 0.82).delay(0.06)) {
@@ -340,10 +280,9 @@ struct ContentView: View {
         VStack(spacing: 7) {
             GeometryReader { proxy in
                 ZStack {
-                    RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.97))
-                    // Shared viewport and screen-space comparison seam.
-                    // Zoom/pan the photo layers first, then apply the reveal mask
-                    // in viewport coordinates so the seam cannot drift with zoom.
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .fill(.white.opacity(0.97))
+
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -354,7 +293,24 @@ struct ContentView: View {
                         .offset(x: previewOffset.width + previewDragOffset.width,
                                 y: previewOffset.height + previewDragOffset.height)
 
-                    if let enhancedImage {
+                    if isProcessing, let livePreviewImage {
+                        // DAT2 publishes the actual assembled output after each tile.
+                        // Untouched regions retain the source baseline; completed tiles
+                        // visibly replace those regions with reconstructed detail.
+                        Image(uiImage: livePreviewImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .overlay {
+                                liveTileMarker(in: proxy.size)
+                            }
+                            .padding(8)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .scaleEffect(previewZoom)
+                            .offset(x: previewOffset.width + previewDragOffset.width,
+                                    y: previewOffset.height + previewDragOffset.height)
+                            .transition(.opacity)
+                    } else if !isProcessing, let enhancedImage {
                         Image(uiImage: enhancedImage)
                             .resizable()
                             .scaledToFit()
@@ -370,66 +326,143 @@ struct ContentView: View {
                             }
                     }
 
-                    if enhancedImage != nil {
+                    if !isProcessing, enhancedImage != nil {
                         ZStack {
                             Rectangle()
                                 .fill(.white)
                                 .frame(width: 2)
-                                .overlay(LinearGradient(colors: [.white, Color(red: 0.34, green: 0.72, blue: 1)], startPoint: .top, endPoint: .bottom))
+                                .overlay(
+                                    LinearGradient(
+                                        colors: [.white, Color(red: 0.34, green: 0.72, blue: 1)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
                             Circle()
                                 .fill(.white.opacity(0.97))
                                 .frame(width: 40, height: 40)
                                 .overlay(Circle().stroke(Color.blue.opacity(0.14), lineWidth: 1))
-                                .overlay(Image(systemName: "arrow.left.and.right")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.blue))
+                                .overlay(
+                                    Image(systemName: "arrow.left.and.right")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.blue)
+                                )
                                 .shadow(color: Color.blue.opacity(0.18), radius: 10, y: 3)
                         }
-                        .position(x: proxy.size.width * comparisonPosition, y: proxy.size.height / 2)
+                        .position(
+                            x: proxy.size.width * comparisonPosition,
+                            y: proxy.size.height / 2
+                        )
                     }
 
                     VStack {
-                        HStack {
-                            badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
-                            Spacer()
-                            if previewZoom > 1.01 {
+                        if isProcessing {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color.blue)
+                                Text("DAT2 实时重构")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Color(red: 0.14, green: 0.20, blue: 0.31))
+                                Spacer(minLength: 2)
+                                Text("\(Int(processingProgress * 100))%")
+                                    .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
+                                    .foregroundStyle(Color.blue)
+                                    .contentTransition(.numericText())
                                 Button {
-                                    withAnimation(.spring(duration: 0.25)) {
-                                        previewZoom = 1
-                                        previewBaseZoom = 1
-                                        previewOffset = .zero
-                                        previewDragOffset = .zero
-                                    }
+                                    processingTask?.cancel()
+                                    processingTask = nil
+                                    isProcessing = false
+                                    livePreviewImage = nil
+                                    livePreviewTileRect = nil
+                                    livePreviewTileIndex = 0
+                                    livePreviewTileCount = 0
+                                    enhancedImage = nil
+                                    processingProgress = 0
+                                    processingStage = "已停止处理"
                                 } label: {
-                                    Image(systemName: "arrow.counterclockwise")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 36, height: 36)
-                                        .background(.black.opacity(0.45), in: Circle())
+                                    Image(systemName: "stop.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.red)
+                                        .frame(width: 28, height: 28)
+                                        .background(Color.red.opacity(0.09), in: Circle())
                                 }
-                                .accessibilityLabel("恢复原比例")
+                                .accessibilityLabel("停止 AI 处理")
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.92), lineWidth: 1))
+
+                            Text(livePreviewTileCount > 0
+                                 ? "刚完成第 \(livePreviewTileIndex)/\(livePreviewTileCount) 块 · 正在继续重构"
+                                 : processingStage)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.45, green: 0.54, blue: 0.66))
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 3)
+                        } else {
+                            HStack {
+                                badge(enhancedImage == nil ? "原图" : "原图 / 增强对比")
+                                Spacer()
+                                if previewZoom > 1.01 {
+                                    Button {
+                                        withAnimation(.spring(duration: 0.25)) {
+                                            previewZoom = 1
+                                            previewBaseZoom = 1
+                                            previewOffset = .zero
+                                            previewDragOffset = .zero
+                                        }
+                                    } label: {
+                                        Image(systemName: "arrow.counterclockwise")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 36, height: 36)
+                                            .background(.black.opacity(0.45), in: Circle())
+                                    }
+                                    .accessibilityLabel("恢复原比例")
+                                }
                             }
                         }
+
                         Spacer()
+
                         HStack {
-                            badge("原图")
+                            badge(isProcessing ? "原图底图" : "原图")
                             Spacer()
-                            badge(enhancedImage == nil ? "待增强" : (previewZoom > 1.01 ? "增强图 · 放大查看" : "增强图 · 拖动对比"))
+                            if isProcessing {
+                                badge(livePreviewTileCount == 0
+                                      ? "等待第一块重构"
+                                      : "已完成 \(livePreviewTileIndex)/\(livePreviewTileCount) 块")
+                            } else {
+                                badge(enhancedImage == nil
+                                      ? "待增强"
+                                      : (previewZoom > 1.01 ? "增强图 · 放大查看" : "增强图 · 拖动对比"))
+                            }
                         }
                     }
                     .padding(12)
-
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.98), lineWidth: 1.2))
-                .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.09), radius: 16, y: 7)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.98), lineWidth: 1.2)
+                )
+                .shadow(
+                    color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.09),
+                    radius: 16,
+                    y: 7
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
                 .highPriorityGesture(
                     MagnificationGesture()
                         .onChanged { value in
+                            guard !isProcessing else { return }
                             previewZoom = min(max(previewBaseZoom * value, 1), 5)
                         }
                         .onEnded { _ in
+                            guard !isProcessing else { return }
                             previewBaseZoom = previewZoom
                             if previewZoom <= 1.01 {
                                 previewZoom = 1
@@ -442,6 +475,7 @@ struct ContentView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 6)
                         .onChanged { value in
+                            guard !isProcessing else { return }
                             if previewDragMode == 0 {
                                 let dividerX = proxy.size.width * comparisonPosition
                                 let touchNearDivider = abs(value.startLocation.x - dividerX) <= 38
@@ -456,7 +490,10 @@ struct ContentView: View {
                             }
                             switch previewDragMode {
                             case 1, 3:
-                                comparisonPosition = min(max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0), 1)
+                                comparisonPosition = min(
+                                    max(previewDragStartPosition + value.translation.width / max(proxy.size.width, 1), 0),
+                                    1
+                                )
                             case 2:
                                 let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
                                 let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
@@ -469,6 +506,11 @@ struct ContentView: View {
                             }
                         }
                         .onEnded { value in
+                            guard !isProcessing else {
+                                previewDragOffset = .zero
+                                previewDragMode = 0
+                                return
+                            }
                             if previewDragMode == 2 {
                                 let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
                                 let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
@@ -482,6 +524,42 @@ struct ContentView: View {
                         }
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func liveTileMarker(in viewport: CGSize) -> some View {
+        if let tileRect = livePreviewTileRect, let preview = livePreviewImage {
+            let imageSize = preview.size
+            let scale = min(
+                viewport.width / max(imageSize.width, 1),
+                viewport.height / max(imageSize.height, 1)
+            )
+            let fittedWidth = imageSize.width * scale
+            let fittedHeight = imageSize.height * scale
+            let originX = (viewport.width - fittedWidth) / 2
+            let originY = (viewport.height - fittedHeight) / 2
+
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.blue.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(.white.opacity(0.95), lineWidth: 2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.blue.opacity(0.85), lineWidth: 1)
+                )
+                .frame(
+                    width: max(2, fittedWidth * tileRect.width),
+                    height: max(2, fittedHeight * tileRect.height)
+                )
+                .position(
+                    x: originX + fittedWidth * tileRect.midX,
+                    y: originY + fittedHeight * tileRect.midY
+                )
+                .animation(.easeInOut(duration: 0.16), value: tileRect)
+                .allowsHitTesting(false)
         }
     }
 
@@ -826,181 +904,6 @@ struct ContentView: View {
         .disabled(isProcessing)
     }
 
-    private var processingStatus: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 9) {
-                ZStack {
-                    Circle()
-                        .fill(processingProgress >= 1 ? Color.green.opacity(0.12) : Color.blue.opacity(0.11))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: processingProgress >= 1 ? "checkmark" : "sparkles")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
-                        .symbolEffect(.pulse, options: .repeating, isActive: processingProgress < 1)
-                        .symbolEffect(.bounce, value: processingProgress >= 1)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(processingProgress >= 1 ? "处理完成" : processingStage)
-                        .contentTransition(.opacity)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color(red: 0.13, green: 0.19, blue: 0.29))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    TimelineView(.periodic(from: .now, by: 4)) { timeline in
-                        let tips = [
-                            "正在本地运行 · 请稍候",
-                            "AI 正在寻找照片里藏起来的细节 ✨",
-                            "布料、发丝和纹理正在努力恢复",
-                            "给模型一点时间，精细活不能急 🪄",
-                            "照片不会上传 · 所有魔法都在手机里"
-                        ]
-                        let timedIndex = Int(timeline.date.timeIntervalSince1970 / 4) % tips.count
-                        Text(processingProgress >= 1 ? "高清照片已经准备好了" : tips[waitingTipIndex == 0 ? timedIndex : (waitingTipIndex % tips.count)])
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color(red: 0.49, green: 0.56, blue: 0.66))
-                            .contentTransition(.opacity)
-                            .animation(.easeInOut(duration: 0.35), value: waitingTipIndex)
-                    }
-                }
-
-                Spacer(minLength: 4)
-
-                if isProcessing {
-                    HStack(spacing: 7) {
-                        Text("\(Int(processingProgress * 100))%")
-                            .font(.system(size: 16, weight: .heavy, design: .rounded).monospacedDigit())
-                            .foregroundStyle(Color.blue)
-                            .contentTransition(.numericText())
-                        Button {
-                            processingTask?.cancel()
-                            processingTask = nil
-                            isProcessing = false
-                            livePreviewImage = nil
-                            enhancedImage = nil
-                            processingProgress = 0
-                            processingStage = "已停止处理"
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.red)
-                                .padding(8)
-                                .background(Color.red.opacity(0.09), in: Circle())
-                        }
-                        .accessibilityLabel("停止 AI 处理")
-                    }
-                } else {
-                    Text("\(Int(processingProgress * 100))%")
-                        .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
-                        .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
-                        .contentTransition(.numericText())
-                }
-            }
-
-            GeometryReader { geometry in
-                let shownProgress = isProgressScrubbing ? progressScrubValue : processingProgress
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color(red: 0.89, green: 0.93, blue: 0.98))
-                    Capsule()
-                        .fill(LinearGradient(colors: processingProgress >= 1
-                                             ? [Color(red: 0.24, green: 0.76, blue: 0.48), Color(red: 0.36, green: 0.84, blue: 0.62)]
-                                             : [Color(red: 0.18, green: 0.64, blue: 1.0), Color(red: 0.34, green: 0.48, blue: 0.98)],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(7, geometry.size.width * shownProgress))
-                        .shadow(color: (processingProgress >= 1 ? Color.green : Color.blue).opacity(0.24), radius: 5, y: 1)
-
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 13, height: 13)
-                        .overlay(Circle().stroke(Color.blue.opacity(0.25), lineWidth: 1.5))
-                        .shadow(color: Color.blue.opacity(0.25), radius: 3, y: 1)
-                        .scaleEffect(isProgressScrubbing ? 1.35 : 1.0)
-                        .position(x: min(max(6.5, geometry.size.width * shownProgress), geometry.size.width - 6.5), y: geometry.size.height / 2)
-                        .animation(.spring(response: 0.28, dampingFraction: 0.58), value: isProgressScrubbing)
-                }
-                .contentShape(Rectangle().inset(by: -14))
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        isProgressScrubbing = true
-                        let fraction = min(max(value.location.x / geometry.size.width, 0), 1)
-                        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.55, blendDuration: 0.15)) {
-                            progressScrubValue = fraction
-                        }
-                    }
-                    .onEnded { _ in
-                        withAnimation(.spring(response: 0.42, dampingFraction: 0.48, blendDuration: 0.2)) {
-                            progressScrubValue = processingProgress
-                            isProgressScrubbing = false
-                        }
-                    })
-            }
-            .frame(height: 5)
-            .padding(.vertical, 9)
-            .accessibilityLabel("处理进度互动条，拖动可玩耍，释放后回到真实进度")
-
-            if processingProgress < 1 {
-                HStack(spacing: 6) {
-                    Button {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                            waitingTipIndex = (waitingTipIndex + 1) % 5
-                            encouragementIndex = (encouragementIndex + 1) % 4
-                        }
-                    } label: {
-                        Label(["换句鼓励", "你很有耐心 ✨", "细节正在恢复 🪄", "快完成了吗？"][encouragementIndex], systemImage: "sparkles")
-                            .font(.system(size: 10, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.07), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            waitingFactExpanded.toggle()
-                        }
-                    } label: {
-                        Label(waitingFactExpanded ? "收起小知识" : "照片小知识", systemImage: waitingFactExpanded ? "chevron.up" : "lightbulb")
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.orange.opacity(0.09), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(Color(red: 0.25, green: 0.48, blue: 0.75))
-                .transition(.opacity.combined(with: .move(edge: .top)))
-
-                if waitingFactExpanded {
-                    Text("AI 增强不是简单放大：它会根据周围像素推测纹理，但无法保证找回原本丢失的真实细节。")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Color(red: 0.46, green: 0.54, blue: 0.65))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.78))
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(LinearGradient(colors: [.white, Color.blue.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-        }
-        .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.10), radius: 15, y: 6)
-        .frame(maxWidth: 300)
-        .animation(.spring(response: 0.38, dampingFraction: 0.84), value: processingProgress >= 1)
-    }
-
     private func beginProgress() {
         processingProgress = 0.02
         processingStage = "正在加载 AI 模型…"
@@ -1052,6 +955,10 @@ struct ContentView: View {
             }
             originalImage = image
             enhancedImage = nil
+            livePreviewImage = nil
+            livePreviewTileRect = nil
+            livePreviewTileIndex = 0
+            livePreviewTileCount = 0
             comparisonPosition = 0.5
             previewZoom = 1
             previewBaseZoom = 1
@@ -1066,9 +973,11 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
-        processingStatusOffset = .zero
-        processingStatusDragStart = .zero
-        isDraggingProcessingStatus = false
+        livePreviewImage = nil
+        livePreviewTileRect = nil
+        livePreviewTileIndex = 0
+        livePreviewTileCount = 0
+        enhancedImage = nil
         beginProgress()
         processingTask = Task {
             do {
@@ -1080,13 +989,17 @@ struct ContentView: View {
                         settings: enhancementSettings
                     ) { progress, stage in
                         Task { @MainActor in
+                            guard isProcessing else { return }
                             processingProgress = min(max(progress, 0.02), 0.99)
                             processingStage = stage
                         }
-                    } livePreview: { preview in
+                    } livePreview: { preview, tileRect, tileIndex, tileCount in
                         Task { @MainActor in
+                            guard isProcessing else { return }
                             livePreviewImage = preview
-                            enhancedImage = preview
+                            livePreviewTileRect = tileRect
+                            livePreviewTileIndex = tileIndex
+                            livePreviewTileCount = tileCount
                         }
                     }
                 } else {
@@ -1097,6 +1010,7 @@ struct ContentView: View {
                         stackedUpscalingEnabled: stackedUpscalingEnabled
                     ) { progress, stage in
                         Task { @MainActor in
+                            guard isProcessing else { return }
                             processingProgress = min(max(progress, 0.02), 0.99)
                             processingStage = stage
                         }
@@ -1105,6 +1019,9 @@ struct ContentView: View {
                 await MainActor.run {
                     enhancedImage = result.image
                     livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
                     processingTask = nil
                     comparisonPosition = 0.5
                     isProcessing = false
@@ -1119,6 +1036,9 @@ struct ContentView: View {
                     isProcessing = false
                     processingTask = nil
                     livePreviewImage = nil
+                    livePreviewTileRect = nil
+                    livePreviewTileIndex = 0
+                    livePreviewTileCount = 0
                     processingProgress = 0
                     if Task.isCancelled || error is CancellationError {
                         processingStage = "已停止处理"
