@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var aiScale = 2
     @State private var enhancementMode: EnhancementMode = .natural
     @AppStorage("photoclear.stackedUpscalingEnabled") private var stackedUpscalingEnabled = true
+    @AppStorage("photoclear.dat2DetailEngineEnabled") private var dat2DetailEngineEnabled = false
     @AppStorage("photoclear.custom.detail") private var customDetail: Double = 0.52
     @AppStorage("photoclear.custom.sharpen") private var customSharpen: Double = 0.18
     @AppStorage("photoclear.custom.denoise") private var customDenoise: Double = 0.18
@@ -103,6 +104,13 @@ struct ContentView: View {
             .sensoryFeedback(.selection, trigger: stackedUpscalingEnabled)
             .onChange(of: stackedUpscalingEnabled) { _, enabled in
                 if !enabled && aiScale > 4 {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        aiScale = 4
+                    }
+                }
+            }
+            .onChange(of: dat2DetailEngineEnabled) { _, enabled in
+                if enabled && aiScale > 4 {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
                         aiScale = 4
                     }
@@ -431,10 +439,10 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 超分辨率")
+                    Text(dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分辨率")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(red: 0.14, green: 0.19, blue: 0.28))
-                    Text("REAL-ESRGAN · 本地 AI 细节重建")
+                    Text(dat2DetailEngineEnabled ? "4×BHI DAT2 · 照片纹理修复" : "REAL-ESRGAN · 本地 AI 超分")
                         .font(.system(size: 9, weight: .medium))
                         .tracking(0.25)
                         .foregroundStyle(Color(red: 0.53, green: 0.59, blue: 0.68))
@@ -461,8 +469,8 @@ struct ContentView: View {
                                 }
                         }
                         .buttonStyle(PressScaleButtonStyle())
-                        .disabled(isProcessing || (scale > 4 && !stackedUpscalingEnabled))
-                        .opacity(scale > 4 && !stackedUpscalingEnabled ? 0.38 : 1)
+                        .disabled(isProcessing || (scale > 4 && (!stackedUpscalingEnabled || dat2DetailEngineEnabled)))
+                        .opacity(scale > 4 && (!stackedUpscalingEnabled || dat2DetailEngineEnabled) ? 0.38 : 1)
                     }
                 }
                 .padding(3)
@@ -477,7 +485,10 @@ struct ContentView: View {
 
             modeSelector
 
-            stackedAlgorithmControl(compact: compact)
+            if !dat2DetailEngineEnabled {
+                stackedAlgorithmControl(compact: compact)
+            }
+            detailEngineControl(compact: compact)
 
             if enhancementMode == .custom {
                 customAdjustmentPanel(compact: compact)
@@ -490,7 +501,7 @@ struct ContentView: View {
                         Image(systemName: isProcessing ? "sparkles" : "sparkles.rectangle.stack")
                             .font(.system(size: 16, weight: .semibold))
                             .symbolEffect(.pulse, options: .repeating, isActive: isProcessing)
-                        Text(isProcessing ? "AI 正在重建细节…" : "AI 超分增强")
+                        Text(isProcessing ? processingStage : (dat2DetailEngineEnabled ? "AI 细节重构" : "AI 超分增强"))
                             .font(.system(size: 13, weight: .bold))
                     }
                     .frame(maxWidth: .infinity)
@@ -594,6 +605,27 @@ struct ContentView: View {
             }
             .padding(.horizontal, 1)
         }
+    }
+
+    private func detailEngineControl(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            aiProcessingOption(
+                title: dat2DetailEngineEnabled ? "DAT2 细节重构已启用" : "启用 AI 细节重构",
+                symbol: "text.magnifyingglass",
+                isEnabled: $dat2DetailEngineEnabled,
+                compact: compact
+            )
+            Text(dat2DetailEngineEnabled
+                 ? "针对真实照片纹理、轻微模糊和压缩痕迹优化；可改善布料、头发等细节，但不保证还原原图已丢失的信息。"
+                 : "开启后使用内嵌 DAT2 模型重建照片纹理；关闭时继续使用现有 Real-ESRGAN。")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color(red: 0.53, green: 0.60, blue: 0.69))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(Color(red: 0.978, green: 0.985, blue: 0.997), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white, lineWidth: 1))
     }
 
     private func stackedAlgorithmControl(compact: Bool) -> some View {
@@ -858,15 +890,29 @@ struct ContentView: View {
         beginProgress()
         Task {
             do {
-                let result = try await RealESRGANUpscaler.shared.upscale(
-                    originalImage,
-                    outputScale: aiScale,
-                    settings: enhancementSettings,
-                    stackedUpscalingEnabled: stackedUpscalingEnabled
-                ) { progress, stage in
-                    Task { @MainActor in
-                        processingProgress = min(max(progress, 0.02), 0.99)
-                        processingStage = stage
+                let result: RealESRGANResult
+                if dat2DetailEngineEnabled {
+                    result = try await DAT2DetailReconstructor.shared.upscale(
+                        originalImage,
+                        outputScale: aiScale,
+                        settings: enhancementSettings
+                    ) { progress, stage in
+                        Task { @MainActor in
+                            processingProgress = min(max(progress, 0.02), 0.99)
+                            processingStage = stage
+                        }
+                    }
+                } else {
+                    result = try await RealESRGANUpscaler.shared.upscale(
+                        originalImage,
+                        outputScale: aiScale,
+                        settings: enhancementSettings,
+                        stackedUpscalingEnabled: stackedUpscalingEnabled
+                    ) { progress, stage in
+                        Task { @MainActor in
+                            processingProgress = min(max(progress, 0.02), 0.99)
+                            processingStage = stage
+                        }
                     }
                 }
                 await MainActor.run {
