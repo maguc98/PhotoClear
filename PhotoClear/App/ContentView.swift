@@ -489,10 +489,10 @@ struct ContentView: View {
                                 previewDragStartPosition = comparisonPosition
                                 if enhancedImage != nil && touchNearDivider {
                                     previewDragMode = 1
-                                } else if previewZoom > 1.01 {
+                                } else {
+                                    // Allow repositioning the crop even at the default zoom.
+                                    // Compare divider dragging still takes priority when touched.
                                     previewDragMode = 2
-                                } else if enhancedImage != nil {
-                                    previewDragMode = 3
                                 }
                             }
                             switch previewDragMode {
@@ -502,8 +502,14 @@ struct ContentView: View {
                                     1
                                 )
                             case 2:
-                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
-                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                let fillScale = max(
+                                    photoWidth / max(image.size.width, 1),
+                                    photoHeight / max(image.size.height, 1)
+                                ) * previewZoom
+                                let renderedWidth = image.size.width * fillScale
+                                let renderedHeight = image.size.height * fillScale
+                                let maxX = max(0, (renderedWidth - photoWidth) / 2)
+                                let maxY = max(0, (renderedHeight - photoHeight) / 2)
                                 previewDragOffset = CGSize(
                                     width: min(max(previewOffset.width + value.translation.width, -maxX), maxX) - previewOffset.width,
                                     height: min(max(previewOffset.height + value.translation.height, -maxY), maxY) - previewOffset.height
@@ -519,8 +525,14 @@ struct ContentView: View {
                                 return
                             }
                             if previewDragMode == 2 {
-                                let maxX = max(0, (proxy.size.width * (previewZoom - 1)) / 2)
-                                let maxY = max(0, (proxy.size.height * (previewZoom - 1)) / 2)
+                                let fillScale = max(
+                                    photoWidth / max(image.size.width, 1),
+                                    photoHeight / max(image.size.height, 1)
+                                ) * previewZoom
+                                let renderedWidth = image.size.width * fillScale
+                                let renderedHeight = image.size.height * fillScale
+                                let maxX = max(0, (renderedWidth - photoWidth) / 2)
+                                let maxY = max(0, (renderedHeight - photoHeight) / 2)
                                 previewOffset = CGSize(
                                     width: min(max(previewOffset.width + value.translation.width, -maxX), maxX),
                                     height: min(max(previewOffset.height + value.translation.height, -maxY), maxY)
