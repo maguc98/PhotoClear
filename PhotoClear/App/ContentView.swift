@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var waitingTipIndex = 0
     @State private var waitingFactExpanded = false
     @State private var encouragementIndex = 0
+    @State private var processingTask: Task<Void, Never>?
+    @State private var livePreviewImage: UIImage?
 
 
     var body: some View {
@@ -800,10 +802,29 @@ struct ContentView: View {
 
                 Spacer(minLength: 4)
 
-                Text("\(Int(processingProgress * 100))%")
-                    .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
-                    .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
-                    .contentTransition(.numericText())
+                if isProcessing {
+                    Button {
+                        processingTask?.cancel()
+                        processingTask = nil
+                        isProcessing = false
+                        livePreviewImage = nil
+                        enhancedImage = nil
+                        processingProgress = 0
+                        processingStage = "已停止处理"
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.red)
+                            .padding(8)
+                            .background(Color.red.opacity(0.09), in: Circle())
+                    }
+                    .accessibilityLabel("停止 AI 处理")
+                } else {
+                    Text("\(Int(processingProgress * 100))%")
+                        .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
+                        .foregroundStyle(processingProgress >= 1 ? Color.green : Color.blue)
+                        .contentTransition(.numericText())
+                }
             }
 
             GeometryReader { geometry in
@@ -950,7 +971,7 @@ struct ContentView: View {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
         beginProgress()
-        Task {
+        processingTask = Task {
             do {
                 let result: RealESRGANResult
                 if dat2DetailEngineEnabled {
@@ -962,6 +983,11 @@ struct ContentView: View {
                         Task { @MainActor in
                             processingProgress = min(max(progress, 0.02), 0.99)
                             processingStage = stage
+                        }
+                    } livePreview: { preview in
+                        Task { @MainActor in
+                            livePreviewImage = preview
+                            enhancedImage = preview
                         }
                     }
                 } else {
@@ -979,6 +1005,8 @@ struct ContentView: View {
                 }
                 await MainActor.run {
                     enhancedImage = result.image
+                    livePreviewImage = nil
+                    processingTask = nil
                     comparisonPosition = 0.5
                     isProcessing = false
                     completeProgress()
@@ -990,6 +1018,8 @@ struct ContentView: View {
             } catch {
                 await MainActor.run {
                     isProcessing = false
+                    processingTask = nil
+                    livePreviewImage = nil
                     processingProgress = 0
                     message = error.localizedDescription
                     showMessage = true
