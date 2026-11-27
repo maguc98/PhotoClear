@@ -166,6 +166,15 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         }
         stageContext.interpolationQuality = .high
 
+        // Seed the live preview canvas with a 4x baseline of the source image.
+        // This keeps not-yet-processed regions from appearing black or transparent.
+        if let baselineCGImage = ciContext.createCGImage(workingImage, from: CGRect(x: 0, y: 0, width: width, height: height)) {
+            stageContext.draw(
+                baselineCGImage,
+                in: CGRect(x: 0, y: stageHeight - height * modelScale, width: stageWidth, height: stageHeight)
+            )
+        }
+
         let xStarts = tileStarts(for: width)
         let yStarts = tileStarts(for: height)
         let totalTiles = max(1, xStarts.count * yStarts.count)
