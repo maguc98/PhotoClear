@@ -123,11 +123,14 @@ struct ContentView: View {
                                        floatingGeometry.size.height - cardHeight / 2 - 12)
                             )
                             .overlay(alignment: .top) {
-                                Capsule()
-                                    .fill(Color.blue.opacity(0.18))
-                                    .frame(width: 38, height: 4)
-                                    .padding(.top, 6)
-                                    .contentShape(Rectangle().size(width: 64, height: 22))
+                                Color.clear
+                                    .frame(width: 64, height: 22)
+                                    .overlay {
+                                        Capsule()
+                                            .fill(Color.blue.opacity(0.18))
+                                            .frame(width: 38, height: 4)
+                                    }
+                                    .contentShape(Rectangle())
                                     .gesture(
                                         DragGesture(minimumDistance: 2)
                                             .onChanged { value in
@@ -868,12 +871,12 @@ struct ContentView: View {
                             .contentTransition(.numericText())
                         Button {
                             processingTask?.cancel()
-                        processingTask = nil
-                        isProcessing = false
-                        livePreviewImage = nil
-                        enhancedImage = nil
-                        processingProgress = 0
-                        processingStage = "已停止处理"
+                            processingTask = nil
+                            isProcessing = false
+                            livePreviewImage = nil
+                            enhancedImage = nil
+                            processingProgress = 0
+                            processingStage = "已停止处理"
                         } label: {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 11, weight: .bold))
