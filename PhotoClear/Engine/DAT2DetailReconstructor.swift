@@ -108,8 +108,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         let width = max(1, Int((Double(originalWidth) * resizeFactor).rounded()))
         let height = max(1, Int((Double(originalHeight) * resizeFactor).rounded()))
         let workingImage = normalizedImage
-            .transformed(by: CGAffineTransform(scaleX: resizeFactor, y: resizeFactor))
-            .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+            .transformed(by: CGAffineTransform(scaleX: CGFloat(resizeFactor), y: CGFloat(resizeFactor)))
+            .cropped(to: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
 
         let stageWidth = width * modelScale
         let stageHeight = height * modelScale
@@ -181,7 +181,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                 let cropRight = rightOverlap - rightOverlap / 2
 
                 try autoreleasepool {
-                    let tileRect = CGRect(x: x0, y: y0, width: tileSize, height: tileSize)
+                    let tileRect = CGRect(x: CGFloat(x0), y: CGFloat(y0), width: CGFloat(tileSize), height: CGFloat(tileSize))
                     let tileImage = workingImage.clampedToExtent().cropped(to: tileRect)
                     guard let inputBuffer = makeInputPixelBuffer(
                         from: tileImage,
@@ -209,7 +209,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                     let outputImage = CIImage(cvPixelBuffer: outputBuffer)
                     guard let outputCGImage = ciContext.createCGImage(
                         outputImage,
-                        from: CGRect(x: 0, y: 0, width: tileSize * modelScale, height: tileSize * modelScale)
+                        from: CGRect(x: 0, y: 0, width: CGFloat(tileSize * modelScale), height: CGFloat(tileSize * modelScale))
                     ) else {
                         throw RealESRGANError.processingFailed("无法读取 DAT2 输出图像。")
                     }
@@ -218,19 +218,19 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                     let contentHeight = max(0, validHeight - cropTop - cropBottom)
                     guard contentWidth > 0, contentHeight > 0,
                           let croppedOutput = outputCGImage.cropping(to: CGRect(
-                            x: cropLeft * modelScale,
-                            y: cropTop * modelScale,
-                            width: contentWidth * modelScale,
-                            height: contentHeight * modelScale
+                            x: CGFloat(cropLeft * modelScale),
+                            y: CGFloat(cropTop * modelScale),
+                            width: CGFloat(contentWidth * modelScale),
+                            height: CGFloat(contentHeight * modelScale)
                           )) else {
                         throw RealESRGANError.processingFailed("DAT2 分块裁剪失败。")
                     }
 
                     let destination = CGRect(
-                        x: (x0 + cropLeft) * modelScale,
-                        y: (y0 + cropTop) * modelScale,
-                        width: contentWidth * modelScale,
-                        height: contentHeight * modelScale
+                        x: CGFloat((x0 + cropLeft) * modelScale),
+                        y: CGFloat((y0 + cropTop) * modelScale),
+                        width: CGFloat(contentWidth * modelScale),
+                        height: CGFloat(contentHeight * modelScale)
                     )
                     stageContext.draw(croppedOutput, in: destination)
                 }
@@ -297,7 +297,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
             finalImage = dissolve.outputImage ?? finalImage
         }
 
-        let finalBounds = CGRect(x: 0, y: 0, width: finalWidth, height: finalHeight)
+        let finalBounds = CGRect(x: 0, y: 0, width: CGFloat(finalWidth), height: CGFloat(finalHeight))
         finalImage = finalImage.cropped(to: finalBounds)
 
         let finalMapping = try allocateMappedBuffer(byteCount: finalBytes)
@@ -349,8 +349,8 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         return RealESRGANResult(
             image: UIImage(cgImage: finalCGImage, scale: 1, orientation: .up),
             inputWasDownscaled: wasDownscaled,
-            inputPixelSize: CGSize(width: width, height: height),
-            outputPixelSize: CGSize(width: finalWidth, height: finalHeight)
+            inputPixelSize: CGSize(width: CGFloat(width), height: CGFloat(height)),
+            outputPixelSize: CGSize(width: CGFloat(finalWidth), height: CGFloat(finalHeight))
         )
     }
 
@@ -378,7 +378,7 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
         ciContext.render(
             image,
             to: pixelBuffer,
-            bounds: CGRect(x: 0, y: 0, width: tileSize, height: tileSize),
+            bounds: CGRect(x: 0, y: 0, width: CGFloat(tileSize), height: CGFloat(tileSize)),
             colorSpace: colorSpace
         )
         return pixelBuffer
