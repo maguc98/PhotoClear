@@ -241,9 +241,13 @@ final class DAT2DetailReconstructor: @unchecked Sendable {
                         throw RealESRGANError.processingFailed("DAT2 分块裁剪失败。")
                     }
 
+                    // CGContext bitmap contexts use a bottom-left origin, while tile
+                    // coordinates and CGImage crop rectangles are top-left based.
+                    // Flip destination Y to keep tiles in the same image-space row.
+                    let destinationY = stageHeight - ((y0 + cropTop + contentHeight) * modelScale)
                     let destination = CGRect(
                         x: CGFloat((x0 + cropLeft) * modelScale),
-                        y: CGFloat((y0 + cropTop) * modelScale),
+                        y: CGFloat(destinationY),
                         width: CGFloat(contentWidth * modelScale),
                         height: CGFloat(contentHeight * modelScale)
                     )
