@@ -36,6 +36,9 @@ struct ContentView: View {
     @State private var livePreviewImage: UIImage?
     @State private var progressScrubValue: Double = 0
     @State private var isProgressScrubbing = false
+    @State private var processingStatusOffset: CGSize = .zero
+    @State private var processingStatusDragStart: CGSize = .zero
+    @State private var isDraggingProcessingStatus = false
 
 
     var body: some View {
@@ -76,12 +79,16 @@ struct ContentView: View {
                         imageComparison(originalImage)
                             // Reserve a predictable vertical zone for the preview so its
                             // bottom badges never collide with the controls card.
-                            .frame(height: compact ? geometry.size.height * 0.43 : geometry.size.height * 0.50)
+                            .frame(height: compact
+                                   ? geometry.size.height * (enhancementMode == .custom ? 0.25 : 0.35)
+                                   : geometry.size.height * (enhancementMode == .custom ? 0.34 : 0.44))
+                            .layoutPriority(0)
                             .opacity(hasAppeared ? 1 : 0)
                             .scaleEffect(hasAppeared ? 1 : 0.975)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
                         compactControls(compact: compact)
+                            .layoutPriority(1)
                             .opacity(hasAppeared ? 1 : 0)
                             .offset(y: hasAppeared ? 0 : 14)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -97,6 +104,61 @@ struct ContentView: View {
                 .padding(.horizontal, compact ? 13 : 18)
                 .padding(.top, compact ? 5 : 12)
                 .padding(.bottom, compact ? 5 : 10)
+            }
+            .overlay {
+                if isProcessing || processingProgress >= 1 {
+                    GeometryReader { floatingGeometry in
+                        let cardWidth = min(300, floatingGeometry.size.width - 28)
+                        let cardHeight: CGFloat = waitingFactExpanded ? 190 : 150
+                        let defaultY = floatingGeometry.size.height * 0.43
+
+                        processingStatus
+                            .frame(width: cardWidth)
+                            .position(
+                                x: min(max(floatingGeometry.size.width / 2 + processingStatusOffset.width,
+                                           cardWidth / 2 + 12),
+                                       floatingGeometry.size.width - cardWidth / 2 - 12),
+                                y: min(max(defaultY + processingStatusOffset.height,
+                                           cardHeight / 2 + 12),
+                                       floatingGeometry.size.height - cardHeight / 2 - 12)
+                            )
+                            .overlay(alignment: .top) {
+                                Capsule()
+                                    .fill(Color.blue.opacity(0.18))
+                                    .frame(width: 38, height: 4)
+                                    .padding(.top, 6)
+                                    .contentShape(Rectangle().size(width: 64, height: 22))
+                                    .gesture(
+                                        DragGesture(minimumDistance: 2)
+                                            .onChanged { value in
+                                                if !isDraggingProcessingStatus {
+                                                    processingStatusDragStart = processingStatusOffset
+                                                    isDraggingProcessingStatus = true
+                                                }
+                                                let minX = cardWidth / 2 + 12
+                                                let maxX = floatingGeometry.size.width - cardWidth / 2 - 12
+                                                let minY = cardHeight / 2 + 12
+                                                let maxY = floatingGeometry.size.height - cardHeight / 2 - 12
+                                                let proposedX = floatingGeometry.size.width / 2
+                                                    + processingStatusDragStart.width + value.translation.width
+                                                let proposedY = defaultY
+                                                    + processingStatusDragStart.height + value.translation.height
+                                                processingStatusOffset = CGSize(
+                                                    width: min(max(proposedX, minX), maxX) - floatingGeometry.size.width / 2,
+                                                    height: min(max(proposedY, minY), maxY) - defaultY
+                                                )
+                                            }
+                                            .onEnded { _ in
+                                                isDraggingProcessingStatus = false
+                                                processingStatusDragStart = processingStatusOffset
+                                            }
+                                    )
+                            }
+                            .shadow(color: Color.blue.opacity(0.13), radius: 20, y: 8)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(20)
+                }
             }
             .onAppear {
                 withAnimation(.spring(response: 0.62, dampingFraction: 0.82).delay(0.06)) {
@@ -351,12 +413,6 @@ struct ContentView: View {
                     }
                     .padding(12)
 
-                    if isProcessing || processingProgress >= 1 {
-                        processingStatus
-                            .padding(.horizontal, 14)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            .transition(.opacity.combined(with: .scale))
-                    }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.98), lineWidth: 1.2))
@@ -805,22 +861,28 @@ struct ContentView: View {
                 Spacer(minLength: 4)
 
                 if isProcessing {
-                    Button {
-                        processingTask?.cancel()
+                    HStack(spacing: 7) {
+                        Text("\(Int(processingProgress * 100))%")
+                            .font(.system(size: 16, weight: .heavy, design: .rounded).monospacedDigit())
+                            .foregroundStyle(Color.blue)
+                            .contentTransition(.numericText())
+                        Button {
+                            processingTask?.cancel()
                         processingTask = nil
                         isProcessing = false
                         livePreviewImage = nil
                         enhancedImage = nil
                         processingProgress = 0
                         processingStage = "已停止处理"
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.red)
-                            .padding(8)
-                            .background(Color.red.opacity(0.09), in: Circle())
+                        } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.red)
+                                .padding(8)
+                                .background(Color.red.opacity(0.09), in: Circle())
+                        }
+                        .accessibilityLabel("停止 AI 处理")
                     }
-                    .accessibilityLabel("停止 AI 处理")
                 } else {
                     Text("\(Int(processingProgress * 100))%")
                         .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
@@ -931,7 +993,6 @@ struct ContentView: View {
         .shadow(color: Color(red: 0.30, green: 0.42, blue: 0.62).opacity(0.10), radius: 15, y: 6)
         .frame(maxWidth: 300)
         .animation(.spring(response: 0.38, dampingFraction: 0.84), value: processingProgress >= 1)
-        .allowsHitTesting(false)
     }
 
     private func beginProgress() {
@@ -999,6 +1060,9 @@ struct ContentView: View {
     private func runAIUpscale() {
         guard let originalImage, !isProcessing else { return }
         isProcessing = true
+        processingStatusOffset = .zero
+        processingStatusDragStart = .zero
+        isDraggingProcessingStatus = false
         beginProgress()
         processingTask = Task {
             do {
